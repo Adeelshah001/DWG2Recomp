@@ -1,0 +1,22 @@
+--- a/src/ui/overlay/debug_overlay.cpp
++++ b/src/ui/overlay/debug_overlay.cpp
+@@ -1,3 +1,4 @@
++#include "dwg2_metrics.h"
+ /**
+  * @file        ui/overlay/debug_overlay.cpp
+  *
+@@ -29,10 +30,13 @@
+ #ifdef REXGLUE_ENABLE_PERF_COUNTERS
+   ImGui::SetNextWindowSize(ImVec2(280, 280), ImGuiCond_FirstUseEver);
+ #else
+-  ImGui::SetNextWindowSize(ImVec2(220, 60), ImGuiCond_FirstUseEver);
++  ImGui::SetNextWindowSize(ImVec2(370, 125), ImGuiCond_FirstUseEver);
+ #endif
+   ImGui::SetNextWindowBgAlpha(0.5f);
+   if (ImGui::Begin("Debug##overlay", nullptr, ImGuiWindowFlags_NoCollapse)) {
++    ImGui::Text("Game swap requests: %.1f/s", dwg2_diag::swap_fps.load());
++    ImGui::Text("Host presents: %.1f/s", dwg2_diag::present_fps.load());
++    ImGui::TextUnformatted("5s sample; not unique-frame measurement");
+     if (stats_provider_) {
+       auto stats = stats_provider_();
+       if (stats.frame_count > 0) {

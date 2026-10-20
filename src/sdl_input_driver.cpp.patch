@@ -1,0 +1,29 @@
+--- a/src/input/sdl/sdl_input_driver.cpp
++++ b/src/input/sdl/sdl_input_driver.cpp
+@@ -10,6 +10,9 @@
+  */
+ 
+ #include <array>
++#if defined(_WIN32)
++#include <windows.h>
++#endif
+ #include <filesystem>
+ 
+ #include <rex/assert.h>
+@@ -566,6 +569,16 @@
+     return;
+   }
+   auto& controller = controllers_.at(*idx);
++#if REX_PLATFORM_WIN32
++  // Touchpad click is a host shortcut; it must not also reach Xbox Guide.
++  if (event.gbutton.button == SDL_GAMEPAD_BUTTON_TOUCHPAD) {
++    if (event.gbutton.down && attached_window_) {
++      auto hwnd = static_cast<HWND>(attached_window_->GetNativeWindowHandle());
++      if (hwnd && GetForegroundWindow() == hwnd) PostMessageW(hwnd, WM_APP + 0x212, 0, 0);
++    }
++    return;
++  }
++#endif
+ 
+   uint16_t xbuttons = controller.state.gamepad.buttons;
+   // Lookup the XInput button code.

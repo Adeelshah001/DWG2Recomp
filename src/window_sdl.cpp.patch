@@ -1,0 +1,30 @@
+--- a/src/ui/window_sdl.cpp
++++ b/src/ui/window_sdl.cpp
+@@ -12,6 +12,7 @@
+  */
+ 
+ #include <rex/ui/window_sdl.h>
++#include "window_controls.h"
+ 
+ #include <algorithm>
+ #include <cmath>
+@@ -184,6 +185,9 @@
+   ApplyTextInputActiveNow();
+   ApplyCursorVisibilityNow();
+   SDL_ShowWindow(sdl_window_);
++#if REX_PLATFORM_WIN32
++  dwg2::controls::Install(this, sdl_window_);
++#endif
+ 
+   // Actualize state for the common Window code. Listener dispatch is handled
+   // by Window::Open after OpenImpl returns; these only record initial state.
+@@ -295,6 +299,9 @@
+   if (!sdl_window_) {
+     return;
+   }
++#if REX_PLATFORM_WIN32
++  dwg2::controls::Sync(this);
++#endif
+   SDL_SetWindowFullscreen(sdl_window_, IsFullscreen());
+ }
+ 
