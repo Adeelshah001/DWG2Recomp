@@ -14,7 +14,9 @@ game. The update ZIP is for an already installed compatible build.
 3. Update the version in `launcher/Launcher.cs` and the release documentation.
    Run `scripts/package-release.ps1` with the version and a new output folder.
    It builds the launcher and copies only explicitly allowed source and
-   documentation. It does not copy your installation or redistribute the runtime.
+   documentation. It does not copy your installation. `-RuntimeFolder` can
+   additionally supply the two host DLLs for a runtime update; review their
+   dependency licenses/source and relinking requirements before publishing.
    For this alpha, from the repository folder:
 
    ```powershell
@@ -23,6 +25,8 @@ game. The update ZIP is for an already installed compatible build.
 4. Keep the full launcher ZIP, the update ZIP and `SHA256SUMS.txt` together.
    Check the archive file lists: no ISO, XEX, game assets, generated game C++,
    `dwg2.exe`, saves, cache, logs, local toolchain profile or proprietary SDK.
+   A runtime update may contain only the allowlisted `rexruntime.dll` and
+   `rexgpu-xenos.dll`; the launcher/source ZIP contains no runtime DLLs.
 5. Extract the update ZIP to a temporary folder and test it against a disposable
    compatible installation. Confirm that game data, saves and display settings
    remain intact. Do not test a new update on your only copy of a save.

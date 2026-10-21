@@ -92,6 +92,13 @@ def main():
         rsp = work / (name+'.rsp')
         rsp.write_text('\n'.join('"'+s.replace('\\','\\\\').replace('"','\\"')+'"' for s in command[1:]))
         run(name, [command[0], '@'+str(rsp)])
+    # Header overlays affect only our isolated compilation, never the SDK checkout.
+    for patch in sorted((REPO/'src').glob('*.h.patch')):
+        text = patch.read_text()
+        relative = text.splitlines()[0][6:]
+        header = work / 'overlay' / relative
+        header.parent.mkdir(parents=True, exist_ok=True)
+        header.write_text(apply_patch((sdk/relative).read_text(), text))
     # Recompile original host overlays; never modify the SDK checkout.
     entries = json.loads((sdk_build/'compile_commands.json').read_text())
     for patch in sorted((REPO/'src').glob('*.cpp.patch')):
@@ -99,7 +106,7 @@ def main():
         relative = text.splitlines()[0][6:]
         source = work / 'overlay' / patch.name[:-6]
         source.write_text(apply_patch((sdk/relative).read_text(), text))
-        entry = next(e for e in entries if Path(e['file']).name == source.name)
+        entry = next(e for e in entries if Path(e['file']).resolve() == (sdk/relative).resolve())
         command = split_windows(entry['command'])
         if '-include-pch' in command:
             i = command.index('-include-pch')
@@ -108,14 +115,21 @@ def main():
         command[0] = str(clang)
         command[command.index('-c')+1] = str(source)
         command[command.index('-o')+1] = str(work/'engine'/(source.stem+'.obj'))
-        command[1:1] = ['-I'+str(REPO/'src')]
+        command[1:1] = ['-I'+str(work/'overlay/include'), '-I'+str(REPO/'src'), '-I'+str((sdk/relative).parent)]
         run('engine-'+source.stem,command)
     engine_link = json.loads((REPO/'config/engine-link.json').read_text())
     command = [str(clang)] + [s.format(**values) for s in engine_link]
     command += ['-o',str(work/'engine/rexruntime.dll'),'-Xlinker','/implib:'+str(work/'engine/rexruntime.lib')]
     link('engine-link',command)
-    for name in ['rexgpu-xenos.dll','TracyClient.dll']:
-        shutil.copyfile(sdk_build/'artifacts'/name,output/name)
+    gpu_recipe = REPO/'config/gpu-link.json'
+    if gpu_recipe.is_file():
+        command = [str(clang)] + [s.format(**values) for s in json.loads(gpu_recipe.read_text())]
+        command += ['-o',str(work/'engine/rexgpu-xenos.dll'),'-Xlinker','/implib:'+str(work/'engine/rexgpu-xenos.lib')]
+        link('gpu-link',command)
+        shutil.copyfile(work/'engine/rexgpu-xenos.dll',output/'rexgpu-xenos.dll')
+    else:
+        shutil.copyfile(sdk_build/'artifacts/rexgpu-xenos.dll',output/'rexgpu-xenos.dll')
+    shutil.copyfile(sdk_build/'artifacts/TracyClient.dll',output/'TracyClient.dll')
     shutil.copyfile(work/'engine/rexruntime.dll',output/'rexruntime.dll')
     if args.engine_only:
         return

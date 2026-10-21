@@ -108,7 +108,7 @@
   "src/input/CMakeFiles/rexinput.dir/input_system.cpp.obj",
   "src/input/CMakeFiles/rexinput.dir/device_assignment.cpp.obj",
   "src/input/CMakeFiles/rexinput.dir/state_merge.cpp.obj",
-  "src/input/CMakeFiles/rexinput.dir/mnk/mnk_input_driver.cpp.obj",
+  "{overlay}/mnk_input_driver.obj",
   "src/input/CMakeFiles/rexinput.dir/nop/nop_input_driver.cpp.obj",
   "{overlay}/sdl_input_driver.obj",
   "src/input/CMakeFiles/rexinput.dir/xinput/xinput_input_driver.cpp.obj",
