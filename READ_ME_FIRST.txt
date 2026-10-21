@@ -1,7 +1,7 @@
-DWG2Recomp v02 LOCAL PREVIEW - not a new GitHub release
+DWG2Recomp v0.2 ALPHA
 
 Close the game and launcher, extract the update, then run:
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\apply-update.ps1 -GameFolder "C:\Projects\Dynasty Warriors - Gundam 2 Recomp\PrivateWorkspace\runtime\local build" -Package .
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\apply-update.ps1 -GameFolder "C:\path\to\installed-game" -Package .
 The update preserves your imported game, saves, cache and display settings.
 
 Run START_DWG2.exe in local build. No game reimport or rebuild is needed.
@@ -31,8 +31,8 @@ Quit Game, fullscreen menu hiding, no intro and no FPS question are retained.
 Save with the game's own menu before quitting. Autosave is not implemented.
 
 Gameplay and FPS testing are paused at your request. No stable-60 or physical
-controller validation claim is made. Test this local preview before approving
-publication as v02 alpha. GitHub's v0.1 Alpha release is unchanged.
+controller validation claim is made. Published as v02 alpha at the user's request. Physical-controller and real-game
+resolution validation remain pending; see TEST_CHECKLIST.md.
 
 Fresh source installations still need BUILDING.md's toolchain and your own game.
 No game data, precompiled game executable or generated translation is in updates.

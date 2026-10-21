@@ -25,7 +25,7 @@ function Hash([string]$Path) {
 }
 $sources=@(
     '.gitattributes','.gitignore','README.md','BUILDING.md','THIRD_PARTY_LICENSE.txt',
-    'READ_ME_FIRST.txt','RELEASE_GUIDE.md','WISHLIST.md',
+    'READ_ME_FIRST.txt','RELEASE_GUIDE.md','WISHLIST.md','TEST_CHECKLIST.md',
     'config/compiler.json','config/dwg2.toml','config/engine-link.json','config/gpu-link.json',
     'launcher/Launcher.cs','scripts/build-launcher.ps1','scripts/build-game.ps1',
     'scripts/build-local.py','scripts/apply-update.ps1','scripts/package-release.ps1',
@@ -67,7 +67,7 @@ if ($RuntimeFolder) {
 $manifest=[ordered]@{
     version=$Version
     baseExecutableSha256='75994f07b80a7aaba9a5e280615a7e706402d039800b7e60b18a27ba154ffd21'
-    compatibleLauncherVersions=@('0.2.0-preview','0.1-alpha',$Version)
+    compatibleLauncherVersions=@('0.2.0-preview','0.2-local-preview','0.1-alpha',$Version)
     gameExecutableSha256='0be3f2e797a31df5d2a231635e4dc5520da36d4b9dbc7b995cf1bd3b0fedb86b'
     files=@($payload | ForEach-Object { @{path=$_;sha256=(Hash (Join-Path $update $_))} })
 }

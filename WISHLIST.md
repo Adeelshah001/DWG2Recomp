@@ -6,7 +6,7 @@ project progresses, not committed timelines. Add new ideas using the template be
 ---
 
 ## 1. Controller Remapping and Controls Menu
-- **Status:** Implemented in local v02 preview; user validation pending
+- **Status:** Implemented in v0.2 Alpha; user validation pending
 - **Description:** Add a Controls tab to the menu bar with controller remapping,
   saved mappings and a way to restore defaults. Keep keyboard and controller
   usable together, including the PS5 touchpad fullscreen shortcut.
