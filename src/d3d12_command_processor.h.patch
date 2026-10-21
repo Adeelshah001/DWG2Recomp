@@ -1,0 +1,14 @@
+--- a/include/rex/graphics/d3d12/command_processor.h
++++ b/include/rex/graphics/d3d12/command_processor.h
+@@ -365,6 +365,11 @@
+                                   uint32_t normalized_color_mask);
+   bool UpdateBindings(const D3D12Shader* vertex_shader, const D3D12Shader* pixel_shader,
+                       ID3D12RootSignature* root_signature, bool shared_memory_is_uav);
++  friend struct Dwg2HostTest;
++  void Dwg2RememberResolve(uint32_t address,uint32_t length);
++  bool Dwg2ReadbackResolvedRange(uint32_t written_address,uint32_t written_length,uint32_t format,bool force_full);
++  bool Dwg2ChangeResolution(uint32_t scale);
++  void Dwg2ApplyResolutionRequest();
+   bool IssueCopy_ReadbackResolvePath();
+   bool IssueDraw_MemexportReadbackFullPath(uint32_t total_size);
+   bool IssueDraw_MemexportReadbackFastPath(uint32_t total_size);

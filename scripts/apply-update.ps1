@@ -22,7 +22,7 @@ if (!$baseMatches) {
     $baseMatches = $installed.Count -ge 2 -and $manifest.compatibleLauncherVersions -contains $installed[0] -and $installed[1] -eq $manifest.gameExecutableSha256
 }
 if (!$baseMatches) { throw 'This update targets a different game build. No files were changed.' }
-$allowed = @('START_DWG2.exe', 'bin/rexruntime.dll', 'READ_ME_FIRST.txt')
+$allowed = @('START_DWG2.exe', 'bin/rexruntime.dll', 'bin/rexgpu-xenos.dll', 'READ_ME_FIRST.txt')
 $seen = @{}
 foreach ($item in $manifest.files) {
     if ($allowed -notcontains $item.path -or $seen.ContainsKey($item.path)) { throw 'Invalid or duplicate update path.' }

@@ -6,10 +6,12 @@ project progresses, not committed timelines. Add new ideas using the template be
 ---
 
 ## 1. Controller Remapping and Controls Menu
-- **Status:** Planned
+- **Status:** Implemented in v0.2 Alpha; user validation pending
 - **Description:** Add a Controls tab to the menu bar with controller remapping,
   saved mappings and a way to restore defaults. Keep keyboard and controller
   usable together, including the PS5 touch-pad full screen shortcut.
+- **Notes:** Controls > Configure provides keyboard, PS5 and Xbox profiles,
+  click-to-bind buttons/sticks/triggers, deadzones, defaults and saved mappings.
 
 ## 2. Fast Forward Without Changing Music
 - **Status:** Planned
@@ -25,9 +27,26 @@ project progresses, not committed timelines. Add new ideas using the template be
   missing or damaged saves and failed writes explicitly. Skipping prompts must
   not discard progress or pretend a save succeeded.
 
-## 4. Fix audio issue. 
+## 4. Fix audio issue
 - **Status:** Planned
-- **Description:** audio background music stops working randomly during mission game play and then resume when music changes.
+- **Description:** Background music stops randomly during mission game play and resumes when the music changes.
+
+## 5. Intermediate Resolution Options
+- **Status:** Planned
+- **Description:** Add resolution choices between the current 1x, 2x and 3x
+  options, with matching internal rendering and output sizes. Keep switching
+  available while the game is running.
+
+## 6. Automatic GitHub Release Updates
+- **Status:** Planned
+- **Description:** Check GitHub Releases at application startup and tell the
+  player when a newer compatible build is available. Ask before downloading or
+  installing the launcher update, following the update flow requested from the
+  Blue Dragon and Lost Odyssey recomp projects.
+- **Notes:** Preserve imported game files, saves, controls and display settings;
+  verify downloaded packages and retain rollback support. Allow skipping an
+  update and keep offline startup usable. Handle access to private releases
+  without embedding credentials in the launcher.
 
 ---
 

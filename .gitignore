@@ -29,3 +29,8 @@ installed.txt
 launch-preview.txt
 launcher-error.txt
 __pycache__/
+
+# Per-user mappings and save folders remain local.
+/controls.ini*
+/saves/
+/save-data/

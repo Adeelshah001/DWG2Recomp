@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 
 internal static class Launcher {
-    internal const string Version = "0.1-alpha";
+    internal const string Version = "0.2-alpha";
     internal const string XexHash = "0be3f2e797a31df5d2a231635e4dc5520da36d4b9dbc7b995cf1bd3b0fedb86b";
     internal static readonly string Root = AppDomain.CurrentDomain.BaseDirectory;
     internal static string Game { get { return Path.Combine(Root, "game-data"); } }
