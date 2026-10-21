@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -21,7 +22,13 @@ internal static class PortableBuild {
         public Item[] files { get; set; }
         public RuntimeItem[] runtimeFiles { get; set; }
     }
-    static readonly string Package = Path.Combine(Launcher.Root,"portable");
+    static readonly string CompressedPackage = Path.Combine(Launcher.Root,"preparation");
+    static string Package = CompressedPackage;
+    internal sealed class ArchiveInfo {
+        public int format { get; set; }
+        public string sha256 { get; set; }
+        public long expandedBytes { get; set; }
+    }
     static string Inside(string root,string relative) {
         if(String.IsNullOrWhiteSpace(relative) || Path.IsPathRooted(relative)) throw new InvalidDataException("Invalid portable package path.");
         string full=Path.GetFullPath(Path.Combine(root,relative.Replace('/',Path.DirectorySeparatorChar)));
@@ -30,7 +37,7 @@ internal static class PortableBuild {
     }
     static Recipe Load() {
         string file=Path.Combine(Package,"build.json");
-        if(!File.Exists(file)) throw new FileNotFoundException("Extract the entire release ZIP beside START_DWG2.exe. Its portable folder is required for first-time preparation.");
+        if(!File.Exists(file)) throw new FileNotFoundException("Extract the entire player ZIP beside START_DWG2.exe. Its preparation folder is required.");
         var recipe=new JavaScriptSerializer { MaxJsonLength=16*1024*1024 }.Deserialize<Recipe>(File.ReadAllText(file));
         if(recipe==null || recipe.format!=1 || String.IsNullOrWhiteSpace(recipe.buildId) || recipe.files==null || recipe.compile==null || recipe.link==null || recipe.runtimeFiles==null)
             throw new InvalidDataException("Unsupported portable build package.");
@@ -72,6 +79,45 @@ internal static class PortableBuild {
         }
     }
     internal static void Prepare(Action<string> report) {
+        var recipe=Load();
+        string archive=Path.Combine(CompressedPackage,"tools.zip");
+        string metadata=Path.Combine(CompressedPackage,"package.json");
+        if(!File.Exists(archive) || !File.Exists(metadata)) throw new FileNotFoundException("The compressed preparation tools are missing. Extract the complete player ZIP again.");
+        var info=new JavaScriptSerializer().Deserialize<ArchiveInfo>(File.ReadAllText(metadata));
+        if(info==null || info.format!=1 || info.expandedBytes<0 || Launcher.Hash(archive)!=info.sha256) throw new InvalidDataException("The compressed preparation tools are damaged. Extract the complete player ZIP again.");
+        var expected=new Dictionary<string,Item>(StringComparer.OrdinalIgnoreCase);
+        foreach(var file in recipe.files) {
+            Inside(CompressedPackage,file.path);
+            if(expected.ContainsKey(file.path)) throw new InvalidDataException("Duplicate preparation entry.");
+            expected.Add(file.path,file);
+        }
+        expected.Add("build.json",new Item{path="build.json",sha256=Launcher.Hash(Path.Combine(CompressedPackage,"build.json"))});
+        string parent=Path.Combine(Launcher.Root,".local-build");Directory.CreateDirectory(parent);
+        if((File.GetAttributes(parent)&FileAttributes.ReparsePoint)!=0) throw new IOException("The local preparation folder must not be a link.");
+        string temporary=Path.Combine(parent,"tools-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(temporary);
+        try {
+            report("Expanding temporary preparation tools...");
+            long total=0;var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using(var zip=ZipFile.OpenRead(archive)) {
+                foreach(var entry in zip.Entries) {
+                    string name=entry.FullName;
+                    if(name.Contains("\\") || name.Contains(":") || name.Split('/').Any(x=>x=="" || x=="." || x=="..") || !expected.ContainsKey(name) || !seen.Add(name)) throw new InvalidDataException("Unexpected preparation archive entry.");
+                    if(entry.Length<0 || total>info.expandedBytes-entry.Length) throw new InvalidDataException("Preparation archive size differs.");
+                    total+=entry.Length;string output=Inside(temporary,name);Directory.CreateDirectory(Path.GetDirectoryName(output));
+                    using(var input=entry.Open()) using(var stream=new FileStream(output,FileMode.CreateNew,FileAccess.Write)) input.CopyTo(stream);
+                    if(Launcher.Hash(output)!=expected[name].sha256) throw new InvalidDataException("Damaged preparation component: "+name);
+                }
+            }
+            if(total!=info.expandedBytes || seen.Count!=expected.Count) throw new InvalidDataException("Incomplete preparation archive.");
+            Package=temporary;
+            PrepareExpanded(report);
+        } finally {
+            Package=CompressedPackage;
+            // Only this unique owned tools directory is removed; imported games and saves are outside it.
+            try { Directory.Delete(temporary,true); } catch(IOException) {} catch(UnauthorizedAccessException) {}
+        }
+    }
+    static void PrepareExpanded(Action<string> report) {
         var r=Load();report("Checking bundled preparation tools...");
         var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach(var f in r.files) {

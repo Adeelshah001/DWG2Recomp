@@ -38,18 +38,24 @@ if(Test-Path -LiteralPath $xex) {
 $allowed=@('START_DWG2.exe','READ_ME_FIRST.txt','START_HERE.txt','THIRD_PARTY_LICENSE.txt','TEST_CHECKLIST.md','apply-update.ps1','apply-portable-update.ps1')
 $seen=@{}
 foreach($item in $manifest.files) {
-    if(($allowed -notcontains $item.path -and !$item.path.StartsWith('portable/',[StringComparison]::Ordinal)) -or $seen.ContainsKey($item.path)) {throw 'Unexpected or duplicate update entry.'}
+    if(($allowed -notcontains $item.path -and !$item.path.StartsWith('portable/',[StringComparison]::Ordinal) -and !$item.path.StartsWith('preparation/',[StringComparison]::Ordinal)) -or $seen.ContainsKey($item.path)) {throw 'Unexpected or duplicate update entry.'}
     $source=Safe-Path $packageRoot $item.path;$dest=Safe-Path $target $item.path
     if((Update-Hash $source) -ne $item.sha256) {throw "Update hash mismatch: $($item.path)"}
     $seen[$item.path]=$item.sha256
 }
-foreach($name in @('START_DWG2.exe','READ_ME_FIRST.txt','portable/build.json')) {if(!$seen.ContainsKey($name)) {throw 'Incomplete portable update.'}}
-$recipe=Get-Content -LiteralPath (Join-Path $packageRoot 'portable\build.json') -Raw | ConvertFrom-Json
-if($recipe.format -ne 1) {throw 'Unsupported portable recipe.'}
-foreach($file in $recipe.files) {
-    $path='portable/'+$file.path
-    [void](Safe-Path $packageRoot $path)
-    if(!$seen.ContainsKey($path) -or $seen[$path] -ne $file.sha256) {throw "Missing verified preparation component: $path"}
+if($manifest.compressedPreparation) {
+    foreach($name in @('START_DWG2.exe','READ_ME_FIRST.txt','preparation/build.json','preparation/package.json','preparation/tools.zip')) {if(!$seen.ContainsKey($name)) {throw 'Incomplete compressed preparation update.'}}
+    $archive=Get-Content -LiteralPath (Join-Path $packageRoot 'preparation/package.json') -Raw | ConvertFrom-Json
+    if($archive.format -ne 1 -or $archive.sha256 -ne $seen['preparation/tools.zip']) {throw 'Preparation archive hash differs.'}
+} else {
+    foreach($name in @('START_DWG2.exe','READ_ME_FIRST.txt','portable/build.json')) {if(!$seen.ContainsKey($name)) {throw 'Incomplete portable update.'}}
+    $recipe=Get-Content -LiteralPath (Join-Path $packageRoot 'portable/build.json') -Raw | ConvertFrom-Json
+    if($recipe.format -ne 1) {throw 'Unsupported portable recipe.'}
+    foreach($file in $recipe.files) {
+        $path='portable/'+$file.path
+        [void](Safe-Path $packageRoot $path)
+        if(!$seen.ContainsKey($path) -or $seen[$path] -ne $file.sha256) {throw "Missing verified preparation component: $path"}
+    }
 }
 # The current bin directory is deliberately left intact. The launcher builds a
 # complete replacement locally, then swaps it only after preparation succeeds.
@@ -73,4 +79,33 @@ try {
     }
     throw
 }
-Write-Host "Updated launcher to $($manifest.version). On its next start it prepares the game with bundled tools. Your current executable, imported game, saves, controls and display settings were preserved."
+if($manifest.compressedPreparation) {
+    # Remove only a completely verified previous managed tools tree. Unknown or
+    # modified files are left alone; game files and settings are never included.
+    $legacy=Join-Path $target 'portable'
+    if(Test-Path -LiteralPath $legacy) {
+        try {
+            $resolved=[IO.Path]::GetFullPath($legacy)
+            if(!$resolved.StartsWith($target+'\',[StringComparison]::OrdinalIgnoreCase)) {throw 'Unsafe legacy folder.'}
+            $items=@(Get-ChildItem -LiteralPath $legacy -Recurse -Force)
+            if((Get-Item -LiteralPath $legacy).Attributes -band [IO.FileAttributes]::ReparsePoint) {throw 'Linked legacy folder.'}
+            foreach($entry in $items) {if($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) {throw 'Linked legacy entry.'}}
+            $old=Get-Content -LiteralPath (Join-Path $legacy 'build.json') -Raw | ConvertFrom-Json
+            $managed=@{};foreach($file in $old.files) {
+                if($file.path.Contains(':') -or $file.path.Contains('\') -or $file.path.Split('/') -contains '..') {throw 'Unsafe legacy entry.'}
+                $managed[$file.path]=$file.sha256
+            }
+            $files=@($items | Where-Object {!$_.PSIsContainer})
+            if($files.Count -ne $managed.Count+1) {throw 'Unrecognized legacy files.'}
+            foreach($file in $files) {
+                $name=$file.FullName.Substring($legacy.Length+1).Replace('\','/')
+                if($name -eq 'build.json') {continue}
+                if(!$managed.ContainsKey($name) -or (Update-Hash $file.FullName) -ne $managed[$name]) {throw 'Modified legacy file.'}
+            }
+            # The resolved absolute target was checked above and its complete tree is managed.
+            Remove-Item -LiteralPath $resolved -Recurse -Force
+            Write-Host 'Removed the verified old expanded preparation tools.'
+        } catch {Write-Host 'Previous preparation folder was retained because it contains unknown or modified files.'}
+    }
+}
+Write-Host "Updated launcher to $($manifest.version). Compatible executables are reused; first-time preparation uses temporary bundled tools. Imported game, saves, controls and display settings were preserved."

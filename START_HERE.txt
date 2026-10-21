@@ -1,4 +1,4 @@
-DWG2 Recomp v0.2.1-alpha — one complete download
+DWG2 Recomp v02 Alpha — player package
 
 NEW INSTALLATION
 Extract the ZIP fully, run START_DWG2.exe and select your own supported USA Xbox360 ISO.
@@ -9,11 +9,11 @@ EXISTING INSTALLATION
 1. Close the game and launcher. Extract this ZIP into a NEW temporary folder.
 2. Open PowerShell in that extracted folder.
 3. Run (replace the example path with your existing launcher folder):
-   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .pply-update.ps1 -GameFolder "C:\Games\DWG2"
-4. Start START_DWG2.exe in your EXISTING folder. It prepares the updated executable once.
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./apply-update.ps1 -GameFolder "C:\Games\DWG2"
+4. Start START_DWG2.exe in your EXISTING folder. Compatible existing executables are reused; older builds may prepare once.
 The update verifies its files and preserves game-data, saves, settings and the old executable.
 The old bin directory is backed up in bin-backups only after successful preparation.
 Do not mix individual runtime DLLs between old and new builds.
 
-The developer folder contains matching open-source host code and relink material.
-Players do not need to open it. No ISO, game executable or generated title code is included.
+The optional developer-source-relink release asset supplies matching host source and relink material.
+Players need only the player ZIP. No ISO, game executable or generated title code is included.

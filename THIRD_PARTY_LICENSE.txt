@@ -32,12 +32,13 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-HOST DEPENDENCIES (v0.2.1 Alpha)
+HOST DEPENDENCIES (v02 Alpha)
 
 The runtime statically links FFmpeg and libmspack under LGPL terms.
 Modification and reverse engineering for debugging those modifications are permitted.
 The matching dependency source, build definitions and host-only relink objects are
-provided inside developer/host-source-relink.zip in the complete release ZIP.
+provided as the optional DWG2Recomp-v02-alpha-developer-source-relink.zip
+asset on the v0.2-alpha GitHub release. Players need only the player ZIP.
 No game executable, game object or proprietary SDK is included or needed to relink the host DLLs.
 
 

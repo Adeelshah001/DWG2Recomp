@@ -1,6 +1,12 @@
-## ISO-only preparation (v0.2.1)
+## Smaller player package
 
-- Extract the complete ZIP into a fresh writable folder and select your supported USA ISO once. No separately installed development tools should be needed.
+- Extract only the player ZIP; preparation should contain three files and no expanded compiler tree.
+- On first setup, tools expand temporarily and disappear after preparation. The compressed payload remains for offline repair.
+- Repeat launch and compatible updates should reuse the prepared executable.
+
+## ISO-only preparation (v02 Alpha)
+
+- Extract the player ZIP into a fresh writable folder and select your supported USA ISO once. No separately installed development tools should be needed.
 - Let import/preparation finish; restart the launcher and confirm it reuses the prepared executable.
 - Existing installation: apply the update from a separate extracted folder; confirm saves, controller mappings and display settings remain. A one-time compatible rebuild is expected.
 - Gameplay/FPS testing remains paused. The following controls/resolution checks are for when you resume manual testing.
