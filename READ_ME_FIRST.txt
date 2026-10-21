@@ -1,38 +1,18 @@
-DWG2Recomp v0.2 ALPHA
+DWG2 Recomp v0.2.1-alpha — Windows x64
 
-Close the game and launcher, extract the update, then run:
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\apply-update.ps1 -GameFolder "C:\path\to\installed-game" -Package .
-The update preserves your imported game, saves, cache and display settings.
+1. Extract the entire complete ZIP to a writable local folder.
+2. Run START_DWG2.exe and choose your own supported original USA Xbox 360 ISO.
+3. Wait for import and first-time preparation (about 3–4 minutes on the development laptop).
+4. Later starts reuse your locally prepared game. Keep all package folders together.
 
-Run START_DWG2.exe in local build. No game reimport or rebuild is needed.
+No separate build tools or SDK installation is required. No game files are included.
+Preparation works offline. Other regions and modified game files are not qualified.
 
-Controls > Configure Controller / Keyboard opens the mapping editor.
-Choose Keyboard, PS5 / DualSense or Xbox controller. Select a game control and
-click Bind selected, or double-click its row, then press the desired key,
-button, trigger or stick direction. Escape cancels binding. Apply saves and
-uses mappings immediately. Save and close applies and closes. Cancel discards
-unapplied edits. Restore defaults affects the selected profile until Apply.
-The deadzone slider applies to sticks and triggers. Saved profiles are in
-controls.ini. Keyboard and controller remain enabled together. Release held
-buttons when closing the editor. Refresh devices after connecting a controller.
-PS5 touchpad defaults to fullscreen and is remappable; Alt+Enter always remains
-available as a host shortcut.
+For updating an existing installation, read START_HERE.txt first. Do not replace
+your old bin folder manually: this update uses a different host/compiler ABI.
+The launcher builds a complete compatible replacement before switching it over.
+Saves, controls.ini, display.ini and imported game data stay local.
 
-View > Resolution: 1x=1280x720, 2x=2560x1440, 3x=3840x2160.
-Both internal rendering and window resolution change without restarting the game.
-The GPU applies the change between frames before the window is resized and the
-setting is saved. Fullscreen uses the monitor's desktop size for output.
-A change can briefly pause while GPU resources and shader pipelines rebuild.
-Transient render-target history is rebuilt; real-game validation is pending.
-Unsafe migration layouts or allocation failures retain the prior scale.
-
-File > Pause / Resume sends Start independently of the saved key bindings.
-Quit Game, fullscreen menu hiding, no intro and no FPS question are retained.
-Save with the game's own menu before quitting. Autosave is not implemented.
-
-Gameplay and FPS testing are paused at your request. No stable-60 or physical
-controller validation claim is made. Published as v02 alpha at the user's request. Physical-controller and real-game
-resolution validation remain pending; see TEST_CHECKLIST.md.
-
-Fresh source installations still need BUILDING.md's toolchain and your own game.
-No game data, precompiled game executable or generated translation is in updates.
+Controls menu: keyboard, PS5 and Xbox mapping. View > Resolution: live 1x/2x/3x
+internal rendering and output; Fullscreen hides the menu. PS5 touchpad toggles fullscreen.
+No intro retained. Gameplay/FPS testing remains paused; stable 60 FPS is not certified.

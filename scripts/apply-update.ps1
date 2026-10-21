@@ -9,6 +9,10 @@ function Get-UpdateHash([string]$Path) {
 $target = (Resolve-Path -LiteralPath $GameFolder).Path
 $packageRoot = (Resolve-Path -LiteralPath $Package).Path
 $manifest = Get-Content -LiteralPath (Join-Path $packageRoot 'update.json') -Raw | ConvertFrom-Json
+if ($manifest.portableBuild) {
+    & (Join-Path $PSScriptRoot 'apply-portable-update.ps1') -GameFolder $target -Package $packageRoot
+    return
+}
 foreach ($process in (Get-Process -ErrorAction SilentlyContinue)) {
     try { $path = $process.Path } catch { continue }
     if ($path -and $path.StartsWith($target + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Close the game and launcher before applying this update.' }

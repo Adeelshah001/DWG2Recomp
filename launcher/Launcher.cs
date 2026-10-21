@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 
 internal static class Launcher {
-    internal const string Version = "0.2-alpha";
+    internal const string Version = "0.2.1-alpha";
     internal const string XexHash = "0be3f2e797a31df5d2a231635e4dc5520da36d4b9dbc7b995cf1bd3b0fedb86b";
     internal static readonly string Root = AppDomain.CurrentDomain.BaseDirectory;
     internal static string Game { get { return Path.Combine(Root, "game-data"); } }
@@ -102,25 +102,8 @@ internal static class Launcher {
         } finally { if (Directory.Exists(staging)) Directory.Delete(staging,true); }
     }
     internal static void EnsureExecutable(Action<string> report) {
-        string exe = Path.Combine(Root,"bin","dwg2.exe");
-        if (!File.Exists(exe)) {
-            string build = Path.Combine(Root,"scripts","build-game.ps1");
-            if (!File.Exists(build)) throw new FileNotFoundException("The build recipe is missing. Keep the launcher beside scripts and src.");
-            report("Building your local game executable. This may take several minutes...");
-            var info = new ProcessStartInfo("powershell.exe", "-NoProfile -ExecutionPolicy Bypass -File " + Quote(build) + " -GameData " + Quote(Game) + " -Output " + Quote(Path.Combine(Root,"bin"))) {
-                UseShellExecute=false, CreateNoWindow=true, WorkingDirectory=Root,
-                RedirectStandardError=true, RedirectStandardOutput=true
-            };
-            using (var log = new StreamWriter(Path.Combine(Root,"logs","first-build.log"),false,Encoding.UTF8))
-            using (var p = new Process()) {
-                object gate = new object(); p.StartInfo=info;
-                DataReceivedEventHandler record=delegate(object sender,DataReceivedEventArgs e) { if(e.Data!=null) lock(gate) { log.WriteLine(e.Data); log.Flush(); } };
-                p.OutputDataReceived+=record; p.ErrorDataReceived+=record;
-                p.Start(); p.BeginOutputReadLine(); p.BeginErrorReadLine(); p.WaitForExit();
-                if(p.ExitCode!=0) throw new InvalidOperationException("The local build failed. Your import is saved; see logs/first-build.log and BUILDING.md for the required build tools.");
-            }
-        }
-        foreach (string file in new string[]{"dwg2.exe","rexruntime.dll","rexgpu-xenos.dll","TracyClient.dll"})
+        if (!PortableBuild.Ready()) PortableBuild.Prepare(report);
+        foreach (string file in new string[]{"dwg2.exe","rexruntime.dll","rexgpu-xenos.dll","libc++.dll","libunwind.dll","libwinpthread-1.dll"})
             if(!File.Exists(Path.Combine(Root,"bin",file))) throw new FileNotFoundException("Missing runtime file: "+file);
         File.WriteAllText(Path.Combine(Root,"installed.txt"),Version+"\n"+XexHash+"\n");
     }
@@ -151,7 +134,7 @@ internal static class Launcher {
                     Progress.Run(delegate(Action<string> report,CancellationToken token) { Import(import,report,token); },true);
                 }
                 Validate(Game);
-                if(File.Exists(Path.Combine(Root,"bin","dwg2.exe"))) EnsureExecutable(delegate(string text){});
+                if(PortableBuild.Ready()) EnsureExecutable(delegate(string text){});
                 else Progress.Run(delegate(Action<string> report,CancellationToken token) { EnsureExecutable(report); },false);
                 if(noLaunch) return 0;
                 var info=new ProcessStartInfo(Path.Combine(Root,"bin","dwg2.exe"),Arguments()) {

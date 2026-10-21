@@ -17,6 +17,8 @@
 *.exe
 *.dll
 *.lib
+*.a
+*.o
 *.zip
 *_recomp.*
 *_funcs.*
@@ -34,3 +36,6 @@ __pycache__/
 /controls.ini*
 /saves/
 /save-data/
+/bin-backups/
+/portable/
+/developer/

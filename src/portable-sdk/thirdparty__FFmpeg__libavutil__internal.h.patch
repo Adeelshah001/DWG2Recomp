@@ -1,0 +1,12 @@
+--- a/thirdparty/FFmpeg/libavutil/internal.h
++++ b/thirdparty/FFmpeg/libavutil/internal.h
+@@ -178,7 +178,9 @@
+                            const char *msg, ...) av_printf_format(2, 3);
+ 
+ #if HAVE_LIBC_MSVCRT
++#if !defined(__MINGW32__)
+ #include <crtversion.h>
++#endif
+ #if defined(_VC_CRT_MAJOR_VERSION) && _VC_CRT_MAJOR_VERSION < 14
+ #pragma comment(linker, "/include:" EXTERN_PREFIX "avpriv_strtod")
+ #pragma comment(linker, "/include:" EXTERN_PREFIX "avpriv_snprintf")

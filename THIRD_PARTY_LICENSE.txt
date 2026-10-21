@@ -32,12 +32,12 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-HOST DEPENDENCIES (v0.2 Alpha)
+HOST DEPENDENCIES (v0.2.1 Alpha)
 
 The runtime statically links FFmpeg and libmspack under LGPL terms.
 Modification and reverse engineering for debugging those modifications are permitted.
 The matching dependency source, build definitions and host-only relink objects are
-provided in DWG2Recomp-v0.2-alpha-host-source-relink.zip on the same release.
+provided inside developer/host-source-relink.zip in the complete release ZIP.
 No game executable, game object or proprietary SDK is included or needed to relink the host DLLs.
 
 
@@ -1568,3 +1568,11 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+PORTABLE PREPARATION TOOLS
+LLVM-MinGW 20261006 UCRT x86_64 from https://github.com/mstorsjo/llvm-mingw
+LLVM/Clang/libc++/libunwind use Apache-2.0 with LLVM exceptions; MinGW headers,
+CRT and winpthreads have their respective bundled notices. libffi uses its MIT license.
+See portable/notices and portable/toolchain/LICENSE.TXT and target share/mingw32 notices.
+No proprietary Xbox SDK or Microsoft compiler/SDK redistributables are included.

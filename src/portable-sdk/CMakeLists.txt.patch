@@ -1,0 +1,27 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -250,6 +250,8 @@
+ )
+ 
+ include_directories(${REXGLUE_ROOT}/include)
++add_compile_options(-fms-extensions -msse4.1)
++add_compile_definitions(WINVER=0x0A00 _WIN32_WINNT=0x0A00 NTDDI_VERSION=0x0A000002)
+ 
+ add_subdirectory(src/core)
+ add_subdirectory(src/filesystem)
+@@ -296,3 +298,15 @@
+     set(REXGLUE_SHARE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/ui")
+     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/rexglue_helpers.cmake)
+ endif()
++
++# DWG2 portable host integration
++target_link_libraries(rexruntime PRIVATE comctl32)
++set(DWG2_HOST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/dwg2-host" CACHE PATH "DWG2 source root")
++add_executable(dwg2-generator "${DWG2_HOST_ROOT}/src/generator.cpp")
++target_link_libraries(dwg2-generator PRIVATE rexcodegen)
++
++target_link_options(rexruntime PRIVATE -Wl,--export-all-symbols)
++
++set_target_properties(rexruntime rexgpu-xenos PROPERTIES PREFIX "")
++
++target_sources(rexruntime PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/runtime-kernel-exports.def")

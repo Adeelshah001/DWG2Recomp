@@ -1,35 +1,13 @@
 # Dynasty Warriors: Gundam 2 Recomp
 
-Windows recompilation project for the original USA Xbox 360 release. This checkout contains **v0.2 Alpha**, published at the user's request. Physical-controller and in-game resolution validation remain pending. Stable 60 FPS has not been established.
+Windows x64 alpha launcher for the supported original USA Xbox 360 release. You supply your own legally obtained game ISO. No game files are distributed.
 
-This repository contains the launcher, original host integrations, build recipes and patches against the pinned open-source ReXGlue SDK. It contains **no game files, generated game translations, assets, saves, Xbox SDK or keys**. Supply your own legally obtained game locally.
+Download the single **complete ZIP** from [Releases](https://github.com/Adeelshah001/DWG2Recomp/releases), extract it to a writable local folder, and run **START_DWG2.exe**. Select your ISO once. The launcher imports the game and prepares the native executable locally with its bundled tools. You do not need to install Visual Studio, Python, Git, CMake or a compiler. First preparation took about 3–4 minutes on the development laptop; other machines will vary. Later starts reuse the executable. Keep the whole extracted folder together.
 
-Build `START_DWG2.exe` with `scripts/build-launcher.ps1`. On the first run, select your ISO or an extracted `default.xex` beside its original `data` and `Res` folders. Import is read-only with respect to the source, validates the supported executable and installs to `game-data`. Failed or cancelled imports do not replace an existing installation. The local build then creates `bin/dwg2.exe`. Later runs reuse it without asking for the game again. See [BUILDING.md](BUILDING.md) for the development toolchain required for that local build.
+Requires Windows 10/11 x64, an x86-64-v2/SSE4.1-capable CPU and a Direct3D 12 compatible GPU/driver. Allow several GB for the extracted game, preparation and backups. Preparation is offline after downloading this package. Other regions, modified executables, title updates and DLC have not been qualified. Unsupported images are rejected rather than silently translated.
 
-The launcher skips startup movies, enables keyboard and controller together, and uses the game's original 60 Hz timing without a frame-rate question. Native Windows menus provide:
+Existing users: extract the new complete ZIP separately, close the launcher/game, then follow **START_HERE.txt** to apply it to your existing installation. Saves, imported game, controller mappings and display settings are preserved. The new launcher prepares a compatible executable once and retains the previous bin directory as a rollback backup.
 
-- **File:** Pause / Resume (the game's Start button during gameplay), Quit Game.
-- **View:** Fullscreen; Resolution: 1x (1280x720), 2x (2560x1440), 3x (3840x2160). Internal rendering changes at a GPU frame boundary; the window follows after the renderer confirms success. No game restart. Fullscreen output uses the monitor's desktop size.
-- **Controls:** Configure keyboard, PS5/DualSense and Xbox profiles. Double-click a control and press a key, controller button, trigger or stick direction; Apply or Save and close. Defaults and per-profile deadzones are available. Mappings are saved to `controls.ini` and take effect immediately. Release held buttons after leaving the editor.
-- **Help:** Controls and About.
+Features retained: no intro, keyboard/PS5/Xbox remapping through Controls, File pause/quit, fullscreen (PS5 touchpad), and live internal/output 1x/2x/3x resolution. Physical controller and full-game validation remain pending. A successful preparation does not establish gameplay stability or stable 60 FPS. Gameplay/FPS testing and decompilation are currently paused.
 
-Fullscreen hides the menu bar. PS5 touchpad click toggles fullscreen by default and can be remapped. Alt+Enter remains a reserved host shortcut. Keyboard and controller stay enabled together. The editor blocks game input while binding controls. Refresh devices after connecting a controller while the editor is open.
-
-The renderer's shader cache is retained between launches. Higher internal resolutions increase GPU cost; no whole-game stable-60 claim has been established. Save using the original game menu before quitting. The inherited runtime shutdown terminates the title and exits the process; this is not an automatic-save feature.
-
-Updates replace only the launcher/runtime allowlist. Run the included `apply-update.ps1 -GameFolder <installed folder> -Package <extracted update folder>` after closing the game. Imported data, saves and caches remain local. Never upload your installation or private build outputs.
-
-The full decompilation investigation is paused and is outside this repository. The private known-good executable remains the baseline while this alpha receives gameplay validation.
-
-Resolution changes rebuild scale-dependent render targets, textures and pipelines and may cause a brief pause. Shared GPU memory and the guest session remain in place; scaled resolved textures are migrated through native-resolution readback. Transient render-target history is rebuilt. Unsupported migration layouts or allocation failures reject the change. These paths require the user's real-game validation; host-only checks do not establish whole-game graphics correctness.
-
-Each release provides one complete ZIP containing the launcher, source/build kit,
-update installer, documentation and applicable host runtime/source materials.
-Download [v0.2 Alpha](https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.2-alpha),
-extract the complete ZIP and read `START_HERE.txt`. Existing compatible installations
-can use its update installer without importing the game again. Fresh setup still
-needs your own supported game and the local toolchain in [BUILDING.md](BUILDING.md);
-this is not yet a turnkey ROM-only installer. Gameplay and FPS testing remain paused.
-See [WISHLIST.md](WISHLIST.md) for future features and [RELEASE_GUIDE.md](RELEASE_GUIDE.md)
-for release instructions. Personal controls, display settings, saves and imported
-game content must remain local and are excluded from Git and release packages.
+See [TEST_CHECKLIST.md](TEST_CHECKLIST.md), [WISHLIST.md](WISHLIST.md), [BUILDING.md](BUILDING.md), [RELEASE_GUIDE.md](RELEASE_GUIDE.md) and [THIRD_PARTY_LICENSE.txt](THIRD_PARTY_LICENSE.txt).

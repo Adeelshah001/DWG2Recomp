@@ -1,0 +1,24 @@
+--- a/include/rex/ui/d3d12/d3d12_api.h
++++ b/include/rex/ui/d3d12/d3d12_api.h
+@@ -21,7 +21,11 @@
+ #include <windows.h>
+ #include <ObjBase.h>
+ 
++#ifdef __MINGW32__
++#include <rex/ui/d3d12/capture_api.h>
++#else
+ #include <DXProgrammableCapture.h>
++#endif
+ #include <d3d12.h>
+ #include <d3d12sdklayers.h>
+ #include <d3dcompiler.h>
+@@ -33,3 +37,9 @@
+ #include "DxbcConverter.h"
+ 
+ // clang-format on
++
++#ifdef __MINGW32__
++__CRT_UUID_DECL(IDxcUtils,0x4605c4cb,0x2019,0x492a,0xad,0xa4,0x65,0xf2,0xb,0xb7,0xd6,0x7f)
++__CRT_UUID_DECL(IDxcCompiler,0x8c210bf3,0x11f,0x4422,0x8d,0x70,0x6f,0x9a,0xcb,0x8d,0xb6,0x17)
++__CRT_UUID_DECL(IDxbcConverter,0x5f956ed5,0x78d1,0x4b15,0x82,0x47,0xf7,0x18,0x76,0x14,0xa0,0x41)
++#endif

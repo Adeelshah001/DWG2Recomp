@@ -1,101 +1,27 @@
-# How to post a DWG2Recomp release yourself
+# Publish a release yourself
 
-Repository: https://github.com/Adeelshah001/DWG2Recomp
+## Upload a prepared complete package
 
-## Current single-download policy
+1. Sign into GitHub and open https://github.com/Adeelshah001/DWG2Recomp/releases.
+2. Click **Draft a new release**.
+3. Choose a new version tag (for example `v0.2.2-alpha`) and the reviewed source commit on main. Never move an existing published tag.
+4. Enter a release title and describe changes, known limitations and validation. Do not claim stable 60 FPS without gameplay testing.
+5. Attach **one complete ZIP** containing the launcher, portable preparation tools, docs, updater and nested developer source/relink archive. Do not attach separate update/source packages. GitHub's automatic source-code archives are normal and separate from uploaded assets.
+6. Put the complete ZIP SHA-256 in the release notes. Check the uploaded filename and size. Mark the release **pre-release** while it is alpha.
+7. Publish, reopen the page, and confirm there is exactly one uploaded ZIP. Download it and check its SHA-256 before sharing the release link.
 
-Publish **one complete ZIP per release**, as used by v0.1 Alpha and v0.2 Alpha.
-The packaging script below creates intermediate launcher/source and update ZIPs;
-do not upload those as separate release assets. Combine their contents into one
-package, preserving the update manifest and installer at its root and checking
-that duplicate files are identical. Include the applicable host source/relink
-archive under `developer/`, notices, instructions and per-file checksums inside
-that package. Upload only the resulting `DWG2Recomp-v<VERSION>-complete.zip` and
-put its SHA-256 in the release notes. Existing users run the included updater;
-fresh users still need their own supported game and BUILDING.md's toolchain.
-The older multi-asset steps below describe the intermediate preparation process;
-the single-download policy takes precedence for publishing and downloading.
+Never upload an installed game folder. Exclude ISO/XEX, extracted assets, generated title C++/objects/executable, saves, controls.ini, display.ini, profiles, logs, local paths, credentials and proprietary SDKs.
 
-The v0.1 alpha is a development release. A fresh installation needs the local
-toolchain described in BUILDING.md to generate its executable from the user's
-game. The update ZIP is for an already installed compatible build.
+## Assemble a new package from reviewed build material
 
-## 1. Prepare the release files
+1. Update the version in launcher/Launcher.cs and the user docs. Commit reviewed source changes to main.
+2. Prepare the verified portable capsule and matching open-source host source/relink ZIP (BUILDING.md). Keep build output outside the repository.
+3. Run in PowerShell, replacing the paths:
 
-1. Close the game and launcher. Test the exact launcher/runtime you plan to ship.
-2. Keep the working installation separate from release staging. Never ZIP the
-   entire project folder or installation: it contains private game files.
-3. Update the version in `launcher/Launcher.cs` and the release documentation.
-   Run `scripts/package-release.ps1` with the version and a new output folder.
-   It builds the launcher and copies only explicitly allowed source and
-   documentation. It does not copy your installation. `-RuntimeFolder` can
-   additionally supply the two host DLLs for a runtime update; review their
-   dependency licenses/source and relinking requirements before publishing.
-   For this alpha, from the repository folder:
+   `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.2.1-alpha -OutputFolder C:\Releases\DWG2-unique -PortableFolder C:\Private\portable -HostSourceRelink C:\Private\host-source-relink.zip`
 
-   ```powershell
-   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.1-alpha -OutputFolder 'C:\Releases\DWG2-v0.1-alpha'
-   ```
-4. Keep the full launcher ZIP, the update ZIP and `SHA256SUMS.txt` together.
-   Check the archive file lists: no ISO, XEX, game assets, generated game C++,
-   `dwg2.exe`, saves, cache, logs, local toolchain profile or proprietary SDK.
-   A runtime update may contain only the allowlisted `rexruntime.dll` and
-   `rexgpu-xenos.dll`; the launcher/source ZIP contains no runtime DLLs.
-5. Extract the update ZIP to a temporary folder and test it against a disposable
-   compatible installation. Confirm that game data, saves and display settings
-   remain intact. Do not test a new update on your only copy of a save.
-6. Write short release notes describing changes, installation, update instructions,
-   known issues and what was actually tested. Do not promise stable 60 FPS
-   without representative mission testing.
+4. Audit every outer/nested ZIP entry. Verify all preparation hashes, bundled DLL dependencies, matching host-only source/relink material and third-party notices. Test fresh ISO preparation and repeat reuse with external development tools removed from PATH; do not launch gameplay while that testing is paused.
+5. Test the updater against a disposable installation with save/settings sentinels and a deliberately tampered package. It must reject bad input before changing files.
+6. Upload only `DWG2Recomp-vVERSION-complete.zip`. Keep build logs and evidence private. SHA256SUMS.txt outside the ZIP is a local reference; the content checksums are also inside the complete package.
 
-## 2. Commit the source changes
-
-1. In GitHub Desktop or your Git client, review the changed-file list and diffs.
-2. Commit only the reviewed launcher/source/configuration/documentation changes.
-   The supplied `.gitignore` keeps private outputs out; do not force-add them.
-3. Push the commit to `main`. Note its commit hash so the release points to the
-   same source used to build the package.
-
-## 3. Create the release on GitHub
-
-1. Sign in to GitHub and open the repository above.
-2. Click **Releases**, then **Draft a new release**.
-3. Choose a new tag, for example `v0.1-alpha` for the first alpha or
-   `v0.1.1-alpha` for the next update. Create that tag on the tested commit.
-   Use a new version instead of replacing an already published release.
-4. Set a clear title, such as **v0.1 Alpha**.
-5. Paste your release notes into the description. Say which ZIP is for a fresh
-   local build and which is an update for an existing installation.
-6. Drag the two ZIPs and `SHA256SUMS.txt` into the release asset area. You can
-   attach this guide separately too. Wait for every upload to finish.
-7. Select **Set as a pre-release** for alpha builds. Keep the repository private
-   if that is your intended audience; a release does not change its visibility.
-8. Save a draft if you need to review it. When ready, click **Publish release**.
-
-## 4. Verify what other users receive
-
-1. Open the published release page and download its assets again.
-2. Compare each ZIP's SHA-256 hash with `SHA256SUMS.txt`. In Windows PowerShell:
-
-   ```powershell
-   Get-FileHash -Algorithm SHA256 -LiteralPath '.\DWG2Recomp-v0.1-alpha-windows-x64.zip'
-   ```
-
-3. Extract the downloaded package and follow its README. Confirm the version
-   and update instructions match the release notes.
-4. Share the release page URL. People need repository access while it is private.
-
-## Installing an update
-
-Close the game and launcher, extract the update ZIP, then run from that folder:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\apply-update.ps1 -GameFolder 'C:\path\to\installed-game' -Package .
-```
-
-Choose the folder containing `START_DWG2.exe` and `bin`, not the `bin` folder.
-The updater checks compatibility and file hashes and creates a local rollback
-backup before replacing the allowed host files. Keep your normal save backup.
-
-Official GitHub instructions:
-https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository
+Existing players extract the complete ZIP separately and run its root apply-update.ps1 against their existing folder, following START_HERE.txt. They do not need a second download or a separate toolchain. Automatic startup update checks are still on the wishlist.

@@ -1,6 +1,19 @@
-#include "dwg2_init.h"
-#include "dwg2_funcs.63.h"
-extern void sub_82166B38(PPCContext&, uint8_t*);
+#include <rex/ppc/context.h>
+#include <rex/image_info.h>
+// Guest implementations and mappings are generated from the user's ISO locally.
+extern const rex::PPCImageInfo PPCImageConfig;
+extern "C" void sub_821669F8(PPCContext&, uint8_t*);
+extern "C" void sub_82166B38(PPCContext&, uint8_t*);
+// Same volatile big-endian accesses and physical-window offset as the pinned SDK.
+#ifndef REX_LOAD_U32
+#if REX_PLATFORM_WIN32 || (REX_PLATFORM_MAC && REX_ARCH_ARM64)
+#define DWG2_PHYS_OFFSET(x) ((uint32_t(x) >= 0xE0000000u) ? 0x1000u : 0u)
+#else
+#define DWG2_PHYS_OFFSET(x) 0u
+#endif
+#define REX_LOAD_U32(x) __builtin_bswap32(*(volatile uint32_t*)(base + uint32_t(x) + DWG2_PHYS_OFFSET(x)))
+#define REX_STORE_U32(x,y) (*(volatile uint32_t*)(base + uint32_t(x) + DWG2_PHYS_OFFSET(x)) = __builtin_bswap32(y))
+#endif
 #include <rex/rex_app.h>
 #include <rex/system/function_dispatcher.h>
 #include <rex/cvar.h>

@@ -1,0 +1,27 @@
+--- a/resources/templates/test/ppc_config_h.inja
++++ b/resources/templates/test/ppc_config_h.inja
+@@ -123,18 +123,20 @@
+ // Setjmp/Longjmp
+ //=============================================================================
+ 
+-inline std::unordered_map<u32, jmp_buf>& get_jmp_buf_map() {
+-  static thread_local std::unordered_map<u32, jmp_buf> map;
++struct alignas(jmp_buf) RexJumpBuffer { jmp_buf value; };
++
++inline std::unordered_map<u32, RexJumpBuffer>& get_jmp_buf_map() {
++  static thread_local std::unordered_map<u32, RexJumpBuffer> map;
+   return map;
+ }
+ 
+-#define ppc_setjmp(guest_buf_addr) (setjmp(::get_jmp_buf_map()[(guest_buf_addr)]))
++#define ppc_setjmp(guest_buf_addr) (setjmp(::get_jmp_buf_map()[(guest_buf_addr)].value))
+ 
+ [[noreturn]] inline void ppc_longjmp(u32 guest_buf_addr, int val) {
+   auto& map = get_jmp_buf_map();
+   auto it = map.find(guest_buf_addr);
+   if (it != map.end()) {
+-    longjmp(it->second, val);
++    longjmp(it->second.value, val);
+   }
+   std::abort();
+ }

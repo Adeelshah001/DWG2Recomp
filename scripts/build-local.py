@@ -23,7 +23,7 @@ def apply_patch(source, patch):
         match = re.match(r'@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@', lines[i])
         if not match:
             raise ValueError('Invalid source patch header')
-        start = int(match.group(1)) - 1
+        start = max(0, int(match.group(1)) - 1)
         if start < cursor:
             raise ValueError('Overlapping source patch')
         result.extend(original[cursor:start]); cursor = start; i += 1

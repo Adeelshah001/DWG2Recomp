@@ -1,3 +1,10 @@
+## ISO-only preparation (v0.2.1)
+
+- Extract the complete ZIP into a fresh writable folder and select your supported USA ISO once. No separately installed development tools should be needed.
+- Let import/preparation finish; restart the launcher and confirm it reuses the prepared executable.
+- Existing installation: apply the update from a separate extracted folder; confirm saves, controller mappings and display settings remain. A one-time compatible rebuild is expected.
+- Gameplay/FPS testing remains paused. The following controls/resolution checks are for when you resume manual testing.
+
 # v0.2 Alpha test checklist
 
 Use START_DWG2.exe in local build. Save using the game's own menu before testing.
