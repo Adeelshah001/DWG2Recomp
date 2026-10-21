@@ -33,7 +33,9 @@ foreach ($item in $manifest.files) {
     if ((Get-Item -LiteralPath (Split-Path $dest -Parent)).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Linked update folders are not supported.' }
     if ((Test-Path -LiteralPath $dest) -and ((Get-Item -LiteralPath $dest).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Linked update destinations are not supported.' }
 }
-if ($manifest.files.Count -ne $allowed.Count) { throw 'Incomplete update package.' }
+foreach ($required in @('START_DWG2.exe', 'READ_ME_FIRST.txt')) {
+    if (!$seen.ContainsKey($required)) { throw 'Incomplete update package.' }
+}
 $backup = Join-Path $target ('.update-backup\' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $backup -Force | Out-Null
 $changed = @()

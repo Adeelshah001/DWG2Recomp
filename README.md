@@ -1,6 +1,6 @@
 # Dynasty Warriors: Gundam 2 Recomp
 
-Windows recompilation project for the original USA Xbox 360 release. This is a **development preview**, not a validated stable release.
+Windows recompilation project for the original USA Xbox 360 release. **v0.1 Alpha** is a development release; stable 60 FPS has not been established.
 
 This repository contains the launcher, original host integrations, build recipes and patches against the pinned open-source ReXGlue SDK. It contains **no game files, generated game translations, assets, saves, Xbox SDK or keys**. Supply your own legally obtained game locally.
 
@@ -19,3 +19,9 @@ The renderer's shader cache is retained between launches. Higher internal resolu
 Updates replace only the launcher/runtime allowlist. Run the included `apply-update.ps1 -GameFolder <installed folder> -Package <extracted update folder>` after closing the game. Imported data, saves and caches remain local. Never upload your installation or private build outputs.
 
 The full decompilation investigation is paused and is outside this repository. The private known-good executable remains the baseline while this preview receives gameplay validation.
+
+The alpha launcher/source ZIP needs the local toolchain in [BUILDING.md](BUILDING.md).
+The smaller update ZIP updates an existing compatible installation without a new
+game import. This alpha update retains the existing runtime; gameplay and FPS
+testing are currently paused. See [WISHLIST.md](WISHLIST.md) for future features
+and [RELEASE_GUIDE.md](RELEASE_GUIDE.md) for step-by-step release instructions.
