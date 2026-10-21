@@ -10,6 +10,6 @@ Existing users: extract the new player ZIP separately, close the launcher/game, 
 
 Features retained: no intro, keyboard/PS5/Xbox remapping through Controls, File pause/quit, fullscreen (PS5 touchpad), and live internal/output 1x/2x/3x resolution. Physical controller and full-game validation remain pending. A successful preparation does not establish gameplay stability or stable 60 FPS. Gameplay/FPS testing and decompilation are currently paused.
 
-See [TEST_CHECKLIST.md](TEST_CHECKLIST.md), [WISHLIST.md](WISHLIST.md), [BUILDING.md](BUILDING.md), [RELEASE_GUIDE.md](RELEASE_GUIDE.md) and [THIRD_PARTY_LICENSE.txt](THIRD_PARTY_LICENSE.txt).
+See [TEST_CHECKLIST.md](TEST_CHECKLIST.md), [To-Do](TO-DO.md), [BUILDING.md](BUILDING.md), [RELEASE_GUIDE.md](RELEASE_GUIDE.md) and [THIRD_PARTY_LICENSE.txt](THIRD_PARTY_LICENSE.txt).
 
 Player-only packaging: preparation tools stay in one compressed payload, expand only during first-time preparation/repair, and are cleaned up afterward. The developer source/relink ZIP is an optional separate release asset. Only v01 and v02 Alpha are release entries.
