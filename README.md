@@ -10,6 +10,13 @@ Existing users: extract the new player ZIP separately, close the launcher/game, 
 
 Features retained: no intro, keyboard/PS5/Xbox remapping through Controls, File pause/quit, fullscreen (PS5 touchpad), and live internal/output 1x/2x/3x resolution. Physical controller and full-game validation remain pending. A successful preparation does not establish gameplay stability or stable 60 FPS. Gameplay/FPS testing and decompilation are currently paused.
 
+The source on main also includes the newer local preview: setup progress,
+File > Restart, live Default/Extended (+10%) field of view, guarded slot 01
+startup autoload, controller-aware Xbox/PS5 artwork, PlayStation prompts and
+HUD/audio corrections pending gameplay validation. These changes have not yet
+replaced the v02 Alpha release download. True 1.5x rendering remains unfinished
+and is not exposed in the player menu. See [local preview notes](docs/LOCAL_PREVIEW.md).
+
 See [TEST_CHECKLIST.md](TEST_CHECKLIST.md), [To-Do](TO-DO.md), [BUILDING.md](BUILDING.md), [RELEASE_GUIDE.md](RELEASE_GUIDE.md) and [THIRD_PARTY_LICENSE.txt](THIRD_PARTY_LICENSE.txt).
 
 Player-only packaging: preparation tools stay in one compressed payload, expand only during first-time preparation/repair, and are cleaned up afterward. The developer source/relink ZIP is an optional separate release asset. Only v01 and v02 Alpha are release entries.

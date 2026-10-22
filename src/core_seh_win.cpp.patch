@@ -1,0 +1,30 @@
+--- a/src/core/seh_win.cpp
++++ b/src/core/seh_win.cpp
+@@ -8,6 +8,8 @@
+ 
+ #include <rex/platform.h>
+ #include <rex/platform/seh.h>
++#include <rex/logging.h>
++#include <cstring>
+ 
+ static_assert(REX_PLATFORM_WIN32, "This file is Windows-only");
+ 
+@@ -31,6 +33,18 @@
+     case EXCEPTION_FLT_DIVIDE_BY_ZERO:
+     case EXCEPTION_ILLEGAL_INSTRUCTION:
+     case EXCEPTION_STACK_OVERFLOW:
++      // Preserve the original failing instruction in the log before a guest
++      // exception wrapper re-raises it from KERNELBASE and loses that address.
++      if (pointers && pointers->ExceptionRecord) {
++        const auto address=reinterpret_cast<uintptr_t>(pointers->ExceptionRecord->ExceptionAddress);
++        HMODULE module=nullptr;char path[MAX_PATH]{};
++        GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
++                          reinterpret_cast<LPCSTR>(address),&module);
++        if(module)GetModuleFileNameA(module,path,MAX_PATH);
++        const char* name=std::strrchr(path,'\\');name=name?name+1:path;
++        REXLOG_ERROR("DWG2 native fault: code 0x{:08X}, {}+0x{:X}, address 0x{:X}",
++                     code,*name?name:"unknown",module?address-reinterpret_cast<uintptr_t>(module):address,address);
++      }
+       tls_seh_state.code = code;
+       if (pointers && pointers->ExceptionRecord) {
+         tls_seh_state.info[0] = pointers->ExceptionRecord->ExceptionInformation[0];

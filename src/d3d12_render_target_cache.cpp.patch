@@ -1,0 +1,23 @@
+--- a/src/graphics/d3d12/render_target_cache.cpp
++++ b/src/graphics/d3d12/render_target_cache.cpp
+@@ -170,6 +170,8 @@
+ }
+ 
+ bool D3D12RenderTargetCache::Initialize() {
++  if(dwg2_scene_denominator_!=1 &&
++     (dwg2_scene_denominator_!=2||draw_resolution_scale_x()!=3||draw_resolution_scale_y()!=3))return false;
+   const ui::d3d12::D3D12Provider& provider = command_processor_.GetD3D12Provider();
+   ID3D12Device* device = provider.GetDevice();
+ 
+@@ -1557,9 +1559,9 @@
+   D3D12_RESOURCE_DESC resource_desc;
+   resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+   resource_desc.Alignment = 0;
+-  resource_desc.Width = key.GetWidth() * draw_resolution_scale_x();
++  resource_desc.Width = Dwg2SceneScaleX().ResourceExtent(key.GetWidth());
+   resource_desc.Height =
+-      GetRenderTargetHeight(key.pitch_tiles_at_32bpp, key.msaa_samples) * draw_resolution_scale_y();
++      Dwg2SceneScaleY().ResourceExtent(GetRenderTargetHeight(key.pitch_tiles_at_32bpp, key.msaa_samples));
+   resource_desc.DepthOrArraySize = 1;
+   resource_desc.MipLevels = 1;
+   if (key.is_depth) {

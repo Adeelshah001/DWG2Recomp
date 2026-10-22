@@ -1577,3 +1577,10 @@ LLVM/Clang/libc++/libunwind use Apache-2.0 with LLVM exceptions; MinGW headers,
 CRT and winpthreads have their respective bundled notices. libffi uses its MIT license.
 See portable/notices and portable/toolchain/LICENSE.TXT and target share/mingw32 notices.
 No proprietary Xbox SDK or Microsoft compiler/SDK redistributables are included.
+
+CONTROLLER ARTWORK AND BUTTON GLYPHS
+Kenney Input Prompts 1.5, Kenney, Creative Commons Zero (CC0 1.0).
+https://kenney.nl/assets/input-prompts
+https://creativecommons.org/publicdomain/zero/1.0/
+Original vector sources and the DWG2 controller callout adaptation are in
+assets/input-prompts. No original game textures are distributed with them.

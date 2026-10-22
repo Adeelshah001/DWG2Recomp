@@ -1,6 +1,20 @@
 --- a/src/ui/d3d12/d3d12_presenter.cpp
 +++ b/src/ui/d3d12/d3d12_presenter.cpp
-@@ -1,3 +1,12 @@
+@@ -1,3 +1,26 @@
++#include "camera_control.h"
++extern "C" __declspec(dllexport) int Dwg2ExtendedFov() { return dwg2::camera::extended.load()?1:0; }
++#include "prompt_control.h"
++extern "C" __declspec(dllexport) int Dwg2NotifyInputActivity(int family,int controller) {
++ if((family!=1&&family!=2)||(controller!=0&&controller!=1))return 0;
++ dwg2::prompts::last_device.store(family);if(controller)dwg2::prompts::last_controller.store(family);return 1;
++}
++extern "C" __declspec(dllexport) int Dwg2ControllerStyle() { return dwg2::prompts::last_controller.load(); }
++extern "C" __declspec(dllexport) int Dwg2PromptStyle() { return dwg2::prompts::Effective(); }
++extern "C" __declspec(dllexport) int Dwg2HudCorrection() { return dwg2::prompts::hud_correction.load()?1:0; }
++extern "C" __declspec(dllexport) int Dwg2SetPresentationPreferences(int choice,int hud) {
++  if(choice<0||choice>2||hud<0||hud>1)return 0;
++  dwg2::prompts::choice.store(choice);dwg2::prompts::hud_correction.store(hud!=0);return 1;
++}
 +#include "resolution_control.h"
 +extern "C" __declspec(dllexport) int Dwg2TakeResolutionRequest() {
 +  return dwg2::resolution::requested.exchange(0);
@@ -13,7 +27,7 @@
  /**
   ******************************************************************************
   * Xenia : Xbox 360 Emulator Research Project                                 *
-@@ -33,6 +42,8 @@
+@@ -33,6 +56,8 @@
  REXCVAR_DEFINE_BOOL(d3d12_allow_variable_refresh_rate_and_tearing, true, "UI/D3D12",
                      "Allow variable refresh rate and tearing");
  
@@ -22,7 +36,7 @@
  namespace rex::ui::d3d12 {
  
  // Generated with `xb buildshaders`.
-@@ -555,6 +566,19 @@
+@@ -555,6 +580,19 @@
  }
  
  Presenter::PaintResult D3D12Presenter::PaintAndPresentImpl(bool execute_ui_drawers) {
@@ -42,7 +56,7 @@
    // Begin the command list with the command allocator not currently potentially
    // used on the GPU.
    UINT64 current_paint_submission = paint_context_.paint_submission_tracker.GetCurrentSubmission();
-@@ -1156,8 +1180,23 @@
+@@ -1156,8 +1194,23 @@
    // fullscreen, but DXGI fullscreen is largely unneeded with the flip
    // presentation model used in Direct3D 12).
    HRESULT present_result = paint_context_.swap_chain->Present(

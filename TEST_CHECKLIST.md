@@ -1,3 +1,22 @@
+## Later local preview (when manual testing resumes)
+
+- [ ] With an existing slot 01, start through START_DWG2.exe and confirm startup
+      loads it without selecting a slot. Check missing-slot fallback separately
+      using a separate installation; preserve your original saves.
+- [ ] After saving normally, use File > Restart. Confirm a fresh game session
+      starts and settings persist. File > Quit should leave the game closed.
+- [ ] Compare View > Field of View > Default / Extended (+10%) in the same scene.
+      Check live changes, normal UI and persistence after restarting.
+- [ ] Use an Xbox/PS5 controller and open the game's controls screen. Confirm
+      the diagram follows controller activity and keyboard use retains it.
+- [ ] Check Controls > Button Prompts and View > HUD seam correction. Record
+      remaining incorrect glyphs, seams or music interruptions.
+- [ ] If a crash recurs, retain the newest logs. The diagnostic line beginning
+      `DWG2 native fault` identifies the original module and offset.
+
+These checks are optional until gameplay testing resumes. The source preview
+does not update the existing GitHub release download.
+
 ## Smaller player package
 
 - Extract only the player ZIP; preparation should contain three files and no expanded compiler tree.

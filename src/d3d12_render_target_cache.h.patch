@@ -1,0 +1,40 @@
+--- a/include/rex/graphics/d3d12/render_target_cache.h
++++ b/include/rex/graphics/d3d12/render_target_cache.h
+@@ -23,6 +23,7 @@
+ #include <vector>
+ 
+ #include <rex/assert.h>
++#include "render_scale.h"
+ #include <rex/graphics/d3d12/shared_memory.h>
+ #include <rex/graphics/d3d12/texture_cache.h>
+ #include <rex/graphics/flags.h>
+@@ -42,12 +43,18 @@
+  public:
+   D3D12RenderTargetCache(const RegisterFile& register_file, const memory::Memory& memory,
+                          uint32_t draw_resolution_scale_x, uint32_t draw_resolution_scale_y,
+-                         D3D12CommandProcessor& command_processor, bool bindless_resources_used)
++                         D3D12CommandProcessor& command_processor, bool bindless_resources_used,
++                         uint32_t dwg2_scene_denominator=1)
+       : RenderTargetCache(register_file, memory, draw_resolution_scale_x, draw_resolution_scale_y),
+         command_processor_(command_processor),
+-        bindless_resources_used_(bindless_resources_used) {}
++        bindless_resources_used_(bindless_resources_used),
++        dwg2_scene_denominator_(dwg2_scene_denominator) {}
+   ~D3D12RenderTargetCache() override;
+ 
++  // Denominator 2 is a scene-rendering probe, not a complete live resolve path.
++  // The player menu must not request it until texture/EDRAM aliasing is qualified.
++  dwg2::RenderScale Dwg2SceneScaleX() const {return {draw_resolution_scale_x(),dwg2_scene_denominator_};}
++  dwg2::RenderScale Dwg2SceneScaleY() const {return {draw_resolution_scale_y(),dwg2_scene_denominator_};}
+   bool Initialize();
+   void Shutdown(bool from_destructor = false);
+ 
+@@ -119,6 +126,8 @@
+   void RequestPixelShaderInterlockBarrier() override;
+ 
+  private:
++  friend struct Dwg2HostTest;
++  const uint32_t dwg2_scene_denominator_;
+   enum class EdramBufferModificationStatus {
+     // The values are ordered by how strong the barrier conditions are.
+     // No uncommitted ROV/UAV writes.

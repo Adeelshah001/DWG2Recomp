@@ -1,6 +1,12 @@
 --- a/src/graphics/d3d12/command_processor.cpp
 +++ b/src/graphics/d3d12/command_processor.cpp
-@@ -9,6 +9,7 @@
+@@ -1,3 +1,5 @@
++#include "scene_scale.h"
++#include "render_scale.h"
+ /**
+  ******************************************************************************
+  * Xenia : Xbox 360 Emulator Research Project                                 *
+@@ -9,6 +11,7 @@
   * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
   */
  
@@ -8,7 +14,7 @@
  #include <algorithm>
  #include <cstdarg>
  #include <cstring>
-@@ -48,6 +49,7 @@
+@@ -48,6 +51,7 @@
      .lifecycle(rex::cvar::Lifecycle::kHotReload);
  
  namespace rex::graphics::d3d12 {
@@ -16,7 +22,7 @@
  
  // Generated with `xb buildshaders`.
  namespace shaders {
-@@ -147,6 +149,7 @@
+@@ -147,6 +151,7 @@
  void D3D12CommandProcessor::InitializeShaderStorage(const std::filesystem::path& cache_root,
                                                      uint32_t title_id, bool blocking) {
    CommandProcessor::InitializeShaderStorage(cache_root, title_id, blocking);
@@ -24,7 +30,7 @@
    pipeline_cache_->InitializeShaderStorage(cache_root, title_id, blocking);
  }
  
-@@ -1627,6 +1630,7 @@
+@@ -1627,6 +1632,7 @@
  }
  
  void D3D12CommandProcessor::ShutdownContext() {
@@ -32,7 +38,7 @@
    AwaitAllQueueOperationsCompletion();
    InvalidateAllVertexBufferResidency();
    ShutdownOcclusionQueryResources();
-@@ -2253,7 +2257,7 @@
+@@ -2253,7 +2259,7 @@
  
    // End the frame even if did not present for any reason (the image refresher
    // was not called), to prevent leaking per-frame resources.
@@ -41,7 +47,41 @@
  }
  
  void D3D12CommandProcessor::OnPrimaryBufferEnd() {
-@@ -2880,8 +2884,10 @@
+@@ -2439,6 +2445,8 @@
+   viewport_key.flags = (uint32_t(convert_z_to_float24) << 0) |
+                        (uint32_t(host_render_targets_used) << 1) | (uint32_t(ps_writes_depth) << 2);
+ 
++  const auto scene_scale_x=render_target_cache_->Dwg2SceneScaleX();
++  const auto scene_scale_y=render_target_cache_->Dwg2SceneScaleY();
+   draw_util::ViewportInfo viewport_info;
+   if (viewport_cache_valid_ && viewport_key == previous_viewport_key_) {
+     viewport_info = previous_viewport_info_;
+@@ -2447,6 +2455,7 @@
+                                    D3D12_VIEWPORT_BOUNDS_MAX, D3D12_VIEWPORT_BOUNDS_MAX, false,
+                                    normalized_depth_control, convert_z_to_float24,
+                                    host_render_targets_used, ps_writes_depth, viewport_info);
++    dwg2::FoldSceneViewport(viewport_info,scene_scale_x,scene_scale_y);
+     previous_viewport_key_ = viewport_key;
+     previous_viewport_info_ = viewport_info;
+     viewport_cache_valid_ = true;
+@@ -2454,10 +2463,12 @@
+ 
+   draw_util::Scissor scissor;
+   draw_util::GetScissor(regs, scissor);
+-  scissor.offset[0] *= draw_resolution_scale_x;
+-  scissor.offset[1] *= draw_resolution_scale_y;
+-  scissor.extent[0] *= draw_resolution_scale_x;
+-  scissor.extent[1] *= draw_resolution_scale_y;
++  const dwg2::RenderScale scissor_scales[2]={scene_scale_x,scene_scale_y};
++  for(uint32_t axis=0;axis<2;++axis) {
++    const int32_t left=scissor_scales[axis].Boundary(int32_t(scissor.offset[axis]));
++    const int32_t right=scissor_scales[axis].Boundary(int32_t(scissor.offset[axis]+scissor.extent[axis]));
++    scissor.offset[axis]=uint32_t(left);scissor.extent[axis]=uint32_t(right-left);
++  }
+ 
+   // Update viewport, scissor, blend factor and stencil reference.
+   UpdateFixedFunctionState(viewport_info, scissor, primitive_polygonal, normalized_depth_control);
+@@ -2880,8 +2891,10 @@
    ReadbackResolveMode readback_mode = GetReadbackResolveMode(REXCVAR_GET(d3d12_readback_resolve));
    if (readback_mode == ReadbackResolveMode::kDisabled) {
      uint32_t written_address, written_length;
@@ -53,7 +93,7 @@
    }
    return IssueCopy_ReadbackResolvePath();
  }
-@@ -2893,12 +2899,18 @@
+@@ -2893,12 +2906,18 @@
      return false;
    }
  
@@ -74,7 +114,7 @@
    }
  
    bool is_scaled = texture_cache_->IsDrawResolutionScaled();
-@@ -2919,7 +2931,7 @@
+@@ -2919,7 +2938,7 @@
              &ui::d3d12::util::kHeapPropertiesReadback, provider.GetHeapFlagCreateNotZeroed(),
              &buffer_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&buffer)))) {
        REXGPU_ERROR("Failed to create a {} MB readback buffer", size >> 20);
@@ -83,7 +123,7 @@
      }
      if (rb.buffers[write_index]) {
        if (rb.mapped_data[write_index]) {
-@@ -2938,36 +2950,35 @@
+@@ -2938,36 +2957,35 @@
    }
  
    if (!rb.buffers[write_index]) {
@@ -129,7 +169,7 @@
      }
  
      uint32_t downscale_buffer_size = AlignReadbackBufferSize(written_length);
-@@ -2984,7 +2995,7 @@
+@@ -2984,7 +3002,7 @@
                IID_PPV_ARGS(&buffer)))) {
          REXGPU_ERROR("Failed to create a {} MB resolve downscale buffer",
                       downscale_buffer_size >> 20);
@@ -138,7 +178,7 @@
        }
        if (resolve_downscale_buffer_) {
          resources_for_deletion_.emplace_back(GetCurrentSubmission(),
-@@ -2995,23 +3006,23 @@
+@@ -2995,23 +3013,23 @@
      }
  
      if (!resolve_downscale_buffer_) {
@@ -166,7 +206,7 @@
      }
  
      const ui::d3d12::D3D12Provider& provider = GetD3D12Provider();
-@@ -3069,14 +3080,14 @@
+@@ -3069,14 +3087,14 @@
                                                 written_address, written_length);
    }
  
@@ -183,7 +223,7 @@
    }
  
    bool is_cache_miss = false;
-@@ -3085,16 +3096,18 @@
+@@ -3085,16 +3103,18 @@
      is_cache_miss = true;
      read_index = write_index;
      if (!AwaitAllQueueOperationsCompletion()) {

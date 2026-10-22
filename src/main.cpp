@@ -1,5 +1,14 @@
 #include <rex/ppc/context.h>
 #include <rex/image_info.h>
+#include "camera_control.h"
+extern "C" __declspec(dllimport) int Dwg2ExtendedFov();
+extern "C" void __imp__sub_82386940(PPCContext&,uint8_t*);
+// Original host hook over the generated weak alias. Direct and indirect calls
+// both reach this entry; the always-original generated implementation is kept.
+extern "C" void sub_82386940(PPCContext& ctx,uint8_t* base) {
+  if(Dwg2ExtendedFov())ctx.f1.f64=dwg2::camera::ExtendedAngle(ctx.f1.f64);
+  __imp__sub_82386940(ctx,base);
+}
 // Guest implementations and mappings are generated from the user's ISO locally.
 extern const rex::PPCImageInfo PPCImageConfig;
 extern "C" void sub_821669F8(PPCContext&, uint8_t*);
@@ -18,6 +27,37 @@ extern "C" void sub_82166B38(PPCContext&, uint8_t*);
 #include <rex/system/function_dispatcher.h>
 #include <rex/cvar.h>
 #include <rex/logging.h>
+#include "startup_load.h"
+extern "C" void __imp__sub_82115E08(PPCContext&,uint8_t*);
+extern "C" void __imp__sub_82114688(PPCContext&,uint8_t*);
+static std::atomic<bool> dwg2_startup_load_attempted{false};
+extern "C" void sub_82115E08(PPCContext& ctx,uint8_t* base) {
+  const uint32_t object=ctx.r3.u32,caller=uint32_t(ctx.lr);
+  auto begin_load=[&] {
+    if(caller!=0x82176B00||dwg2_startup_load_attempted.load())return;
+    dwg2::startup::LoadSnapshot s;
+    s.caller=caller;s.mode=REX_LOAD_U32(object+1752);s.state=REX_LOAD_U32(object+1748);
+    if(s.mode!=2||s.state!=5)return;
+    s.buffer=REX_LOAD_U32(object+1760);
+    if(!s.buffer||uint64_t(s.buffer)+0x00334000>0x100000000ULL)return;
+    s.magic=REX_LOAD_U32(s.buffer);s.count=REX_LOAD_U32(s.buffer+4);
+    s.stride=REX_LOAD_U32(s.buffer+8);s.occupied=REX_LOAD_U32(s.buffer+12);
+    s.slot_type=REX_LOAD_U32(s.buffer+16);s.data_offset=REX_LOAD_U32(s.buffer+36);
+    s.interim_offset=REX_LOAD_U32(s.buffer+40);
+    if(!dwg2::startup::CanLoadFirstSlot(s))return;
+    bool expected=false;if(!dwg2_startup_load_attempted.compare_exchange_strong(expected,true))return;
+    // Enter the same load operation as confirming occupied slot 01 in startup
+    // mode. Keep the original ready checks, data application and error paths.
+    REX_STORE_U32(object+1756,0);REX_STORE_U32(object+1748,7);
+    PPCContext action=ctx;action.r3.u32=object;action.r4.u32=4;
+    __imp__sub_82114688(action,base);
+    // Only the cosmetic startup hold is shortened. No I/O completion/result is
+    // manufactured, and manual load/save dialogs retain their original timing.
+    REX_STORE_U32(object+1772,25);REX_STORE_U32(object+1824,0);
+    REXLOG_INFO("DWG2 startup: loading slot 01 through original load operation");
+  };
+  begin_load();__imp__sub_82115E08(ctx,base);begin_load();
+}
 REXCVAR_DEFINE_BOOL(dwg2_skip_startup_logos, true, "DWG2", "Skip startup branding using original pre-title storage transition");
 static void Dwg2BootInit(PPCContext& ctx, uint8_t* base) {
   const uint32_t object = ctx.r3.u32;
@@ -56,6 +96,10 @@ class Dwg2App : public rex::ReXApp {
  protected:
   void OnPostLaunchModule(rex::system::XThread*) override {
     auto* dispatcher = runtime()->function_dispatcher();
+    if(dispatcher->GetFunction(0x82386940)!=&sub_82386940)
+      throw std::runtime_error("DWG2 perspective hook does not match this game build");
+    if(dispatcher->GetFunction(0x82115E08)!=&sub_82115E08)
+      throw std::runtime_error("DWG2 startup load hook does not match this game build");
     if (dispatcher->GetFunction(0x821669F8) != &sub_821669F8 ||
         !dispatcher->SetFunction(0x821669F8, &Dwg2BootInit) ||
         dispatcher->GetFunction(0x82166B38) != &sub_82166B38 ||

@@ -27,6 +27,7 @@
 *shader*
 toolchain.local.json
 display.ini*
+prompts.ini*
 installed.txt
 launch-preview.txt
 launcher-error.txt
@@ -41,3 +42,6 @@ __pycache__/
 /developer/
 
 /preparation/
+
+# Local camera preferences
+camera.ini*

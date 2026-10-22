@@ -56,53 +56,70 @@ internal static class Launcher {
             + " --resolution_scale=" + n + " --draw_resolution_scale_x=" + n + " --draw_resolution_scale_y=" + n
             + " --window_width=" + (1280*n) + " --window_height=" + (720*n);
     }
-    internal static void CopyFolder(string source, string target, Action<string> report, CancellationToken token) {
+    internal static void CopyFolder(string source, string target, Action<string> report, CancellationToken token,SetupProgress progress=null) {
+        long expected=MeasureFolder(source,token),copied=0;
+        CopyFolderTree(source,target,report,token,delegate(long count) { copied+=count;if(progress!=null) progress.Report(expected==0?0:0.95*copied/expected,"Importing your game..."); });
+    }
+    static long MeasureFolder(string source,CancellationToken token) {
+        token.ThrowIfCancellationRequested();
+        if((File.GetAttributes(source)&FileAttributes.ReparsePoint)!=0) throw new IOException("Linked folders are not accepted during import.");
+        long size=0;
+        foreach(string file in Directory.GetFiles(source)) {
+            if((File.GetAttributes(file)&FileAttributes.ReparsePoint)!=0) throw new IOException("Linked files are not accepted.");
+            size=checked(size+new FileInfo(file).Length);
+        }
+        foreach(string dir in Directory.GetDirectories(source)) if(!Path.GetFileName(dir).Equals("$SystemUpdate",StringComparison.OrdinalIgnoreCase)) size=checked(size+MeasureFolder(dir,token));
+        return size;
+    }
+    static void CopyFolderTree(string source,string target,Action<string> report,CancellationToken token,Action<long> copied) {
         if ((File.GetAttributes(source) & FileAttributes.ReparsePoint) != 0)
             throw new IOException("Linked folders are not accepted during import.");
         Directory.CreateDirectory(target);
         foreach (string file in Directory.GetFiles(source)) {
             token.ThrowIfCancellationRequested();
             if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0) throw new IOException("Linked files are not accepted.");
-            report("Importing " + Path.GetFileName(file));
+            report("Importing your game...");
             using (var input = File.OpenRead(file)) using (var output = new FileStream(Path.Combine(target,Path.GetFileName(file)),FileMode.CreateNew))
-                Copy(input,output,input.Length,token);
+                Copy(input,output,input.Length,token,copied);
         }
         foreach (string dir in Directory.GetDirectories(source)) {
             if (Path.GetFileName(dir).Equals("$SystemUpdate",StringComparison.OrdinalIgnoreCase)) continue;
-            CopyFolder(dir,Path.Combine(target,Path.GetFileName(dir)),report,token);
+            CopyFolderTree(dir,Path.Combine(target,Path.GetFileName(dir)),report,token,copied);
         }
     }
-    internal static void Copy(Stream input, Stream output, long bytes, CancellationToken token) {
+    internal static void Copy(Stream input, Stream output, long bytes, CancellationToken token,Action<long> copied=null) {
         byte[] buffer = new byte[1024*1024];
         while (bytes > 0) {
             token.ThrowIfCancellationRequested();
             int count = input.Read(buffer,0,(int)Math.Min(bytes,buffer.Length));
             if (count == 0) throw new EndOfStreamException("The game image is truncated.");
-            output.Write(buffer,0,count); bytes -= count;
+            output.Write(buffer,0,count); bytes -= count;if(copied!=null) copied(count);
         }
     }
-    internal static void Import(string source, Action<string> report, CancellationToken token) {
+    internal static void Import(string source, Action<string> report, CancellationToken token,SetupProgress progress=null) {
         if (Directory.Exists(Game)) throw new IOException("game-data already exists. Your existing installation has been preserved.");
         string staging = Path.Combine(Root,"game-data.import-"+Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(staging);
         try {
             if (Path.GetExtension(source).Equals(".iso",StringComparison.OrdinalIgnoreCase)) {
-                using (var disc = new Disc(source)) disc.Extract(staging,report,token);
+                using (var disc = new Disc(source)) disc.Extract(staging,report,token,progress);
             } else {
                 if (!Path.GetFileName(source).Equals("default.xex",StringComparison.OrdinalIgnoreCase))
                     throw new InvalidDataException("Choose an ISO or default.xex with its original game folders.");
                 string from = Path.GetFullPath(Path.GetDirectoryName(source)).TrimEnd('\\')+"\\";
                 if (Path.GetFullPath(staging).StartsWith(from,StringComparison.OrdinalIgnoreCase))
                     throw new IOException("Choose the original extracted game folder outside this launcher folder.");
-                Validate(from); CopyFolder(from,staging,report,token);
+                Validate(from); CopyFolder(from,staging,report,token,progress);
             }
+            if(progress!=null) progress.Report(0.96,"Checking imported game files...");
             Validate(staging);
             token.ThrowIfCancellationRequested();
             Directory.Move(staging,Game);
+            if(progress!=null) progress.Report(1,"Game import complete.");
         } finally { if (Directory.Exists(staging)) Directory.Delete(staging,true); }
     }
-    internal static void EnsureExecutable(Action<string> report) {
-        if (!PortableBuild.Ready()) PortableBuild.Prepare(report);
+    internal static void EnsureExecutable(Action<string> report,SetupProgress progress=null) {
+        if (!PortableBuild.Ready()) PortableBuild.Prepare(report,progress);
         foreach (string file in new string[]{"dwg2.exe","rexruntime.dll","rexgpu-xenos.dll","libc++.dll","libunwind.dll","libwinpthread-1.dll"})
             if(!File.Exists(Path.Combine(Root,"bin",file))) throw new FileNotFoundException("Missing runtime file: "+file);
         File.WriteAllText(Path.Combine(Root,"installed.txt"),Version+"\n"+XexHash+"\n");
@@ -124,31 +141,31 @@ internal static class Launcher {
                 if(!created) throw new InvalidOperationException("The launcher or game is already running from this folder.");
                 Directory.CreateDirectory(Path.Combine(Root,"logs"));
                 if(validate) { Validate(Game); return 0; }
-                if(!Directory.Exists(Game)) {
-                    if(import==null) using(var picker=new OpenFileDialog()) {
-                        picker.Title="Import your Dynasty Warriors: Gundam 2 game";
-                        picker.Filter="Xbox 360 game image|*.iso;default.xex|ISO image|*.iso|Extracted game|default.xex";
-                        if(picker.ShowDialog()!=DialogResult.OK) return 0;
-                        import=picker.FileName;
-                    }
-                    Progress.Run(delegate(Action<string> report,CancellationToken token) { Import(import,report,token); },true);
+                bool needsImport=!Directory.Exists(Game);
+                if(needsImport && import==null) using(var picker=new OpenFileDialog()) {
+                    picker.Title="Import your Dynasty Warriors: Gundam 2 game";
+                    picker.Filter="Xbox 360 game image|*.iso;default.xex|ISO image|*.iso|Extracted game|default.xex";
+                    if(picker.ShowDialog()!=DialogResult.OK) return 0;
+                    import=picker.FileName;
                 }
-                Validate(Game);
-                if(PortableBuild.Ready()) EnsureExecutable(delegate(string text){});
-                else Progress.Run(delegate(Action<string> report,CancellationToken token) { EnsureExecutable(report); },false);
+                if(needsImport || !PortableBuild.Ready()) {
+                    Progress.Run(delegate(SetupProgress progress,CancellationToken token) {
+                        if(needsImport) Import(import,progress.ReportText,token,progress.Range(0,0.25));
+                        token.ThrowIfCancellationRequested();
+                        progress.DisableCancellation();
+                        progress.Report(0.25,"Checking your installation...");
+                        Validate(Game);
+                        EnsureExecutable(progress.ReportText,progress.Range(0.25,0.99));
+                        progress.Report(0.99,"Finishing setup...");
+                    },needsImport);
+                } else { Validate(Game);EnsureExecutable(delegate(string text){}); }
                 if(noLaunch) return 0;
                 var info=new ProcessStartInfo(Path.Combine(Root,"bin","dwg2.exe"),Arguments()) {
                     UseShellExecute=false,WorkingDirectory=Path.Combine(Root,"bin"),CreateNoWindow=true,
                     RedirectStandardOutput=true,RedirectStandardError=true
                 };
                 using(var log=new StreamWriter(Path.Combine(Root,"logs","last-console.log"),false,Encoding.UTF8))
-                using(var p=new Process()) {
-                    object gate=new object();p.StartInfo=info;
-                    DataReceivedEventHandler record=delegate(object sender,DataReceivedEventArgs e) { if(e.Data!=null) lock(gate) { log.WriteLine(e.Data);log.Flush(); } };
-                    p.OutputDataReceived+=record;p.ErrorDataReceived+=record;
-                    p.Start();p.BeginOutputReadLine();p.BeginErrorReadLine();p.WaitForExit();
-                    if(p.ExitCode!=0) throw new InvalidOperationException("The game exited unexpectedly ("+p.ExitCode+"). See the logs folder.");
-                }
+                    GameSession.Run(info,log);
             }
             return 0;
         } catch(OperationCanceledException) { return 0; }
@@ -156,30 +173,10 @@ internal static class Launcher {
     }
 }
 
-internal sealed class Progress : Form {
-    readonly Label label=new Label { Dock=DockStyle.Fill,Padding=new Padding(18),Text="Preparing..." };
-    readonly CancellationTokenSource cancel=new CancellationTokenSource();
-    Exception failure; bool done;
-    private Progress(Action<Action<string>,CancellationToken> action,bool cancellable) {
-        Text="DWG2 Setup"; Width=520;Height=150;StartPosition=FormStartPosition.CenterScreen;
-        FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=false;MinimizeBox=false;ControlBox=cancellable;
-        Controls.Add(label); Controls.Add(new ProgressBar { Dock=DockStyle.Bottom,Style=ProgressBarStyle.Marquee });
-        FormClosing+=delegate(object sender,FormClosingEventArgs e) { if(!done) { cancel.Cancel();e.Cancel=true;label.Text="Cancelling safely..."; } };
-        Shown+=async delegate {
-            try { await Task.Run(delegate { action(delegate(string text) { BeginInvoke((Action)delegate { label.Text=text; }); },cancel.Token); }); }
-            catch(Exception e) { failure=e; }
-            done=true;Close();
-        };
-    }
-    internal static void Run(Action<Action<string>,CancellationToken> action,bool cancellable) {
-        using(var form=new Progress(action,cancellable)) { form.ShowDialog();if(form.failure!=null) throw form.failure; }
-    }
-}
-
 // Bounded read-only XDVDFS reader. Full-disc and game-partition Xbox 360 images.
 internal sealed class Disc : IDisposable {
     readonly FileStream file; readonly BinaryReader reader; long partition;
-    uint rootSector,rootLength; int files;long total;
+    uint rootSector,rootLength; int files;long total,copied;
     readonly HashSet<long> directories=new HashSet<long>();
     internal Disc(string path) {
         file=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.Read);reader=new BinaryReader(file);
@@ -198,13 +195,18 @@ internal sealed class Disc : IDisposable {
         if(offset<0 || count<0 || offset>file.Length-count) throw new InvalidDataException("The ISO contains an out-of-range entry.");
         file.Position=offset;byte[] data=reader.ReadBytes(count);if(data.Length!=count) throw new EndOfStreamException();return data;
     }
-    internal void Extract(string destination,Action<string> report,CancellationToken token) { DirectoryTree(rootSector,rootLength,destination,0,report,token); }
-    void DirectoryTree(uint sector,uint length,string destination,int depth,Action<string> report,CancellationToken token) {
+    internal void Extract(string destination,Action<string> report,CancellationToken token,SetupProgress progress=null) {
+        if(progress!=null) progress.Report(0,"Inspecting your game image...");
+        DirectoryTree(rootSector,rootLength,destination,0,report,token,false,0,null);
+        long expected=total;files=0;total=0;directories.Clear();
+        DirectoryTree(rootSector,rootLength,destination,0,report,token,true,expected,progress);
+    }
+    void DirectoryTree(uint sector,uint length,string destination,int depth,Action<string> report,CancellationToken token,bool extract,long expected,SetupProgress progress) {
         if(length==0) return;
         long offset=partition+(long)sector*2048;
         if(depth>32 || length>16*1024*1024 || !directories.Add(offset)) throw new InvalidDataException("Invalid directory tree in ISO.");
         byte[] table=Read(offset,(int)length);var pending=new Stack<int>();var visited=new HashSet<int>();pending.Push(0);
-        Directory.CreateDirectory(destination);
+        if(extract) Directory.CreateDirectory(destination);
         while(pending.Count>0) {
             token.ThrowIfCancellationRequested();int pos=pending.Pop();
             if(!visited.Add(pos) || pos<0 || pos+14>table.Length) throw new InvalidDataException("Invalid directory node.");
@@ -217,13 +219,19 @@ internal sealed class Disc : IDisposable {
             string target=Path.Combine(destination,name);
             if(left!=0) pending.Push(left*4);if(right!=0) pending.Push(right*4);
             if(name.Equals("$SystemUpdate",StringComparison.OrdinalIgnoreCase)) continue;
-            if((attr&0x10)!=0) DirectoryTree(entrySector,size,target,depth+1,report,token);
+            if((attr&0x10)!=0) DirectoryTree(entrySector,size,target,depth+1,report,token,extract,expected,progress);
             else {
                 if(++files>100000 || (total+=size)>32L*1024*1024*1024) throw new InvalidDataException("Unreasonable ISO content size.");
                 long start=partition+(long)entrySector*2048;
                 if(start>file.Length-size) throw new InvalidDataException("Truncated file in ISO.");
-                report("Importing "+name);file.Position=start;
-                using(var output=new FileStream(target,FileMode.CreateNew,FileAccess.Write)) { Launcher.Copy(file,output,size,token);output.Flush(true); }
+                if(extract) {
+                    report("Importing your game...");file.Position=start;
+                    using(var output=new FileStream(target,FileMode.CreateNew,FileAccess.Write)) {
+                        Launcher.Copy(file,output,size,token,delegate(long count) {
+                            copied+=count;if(progress!=null) progress.Report(expected==0?0:0.95*copied/expected,"Importing your game...");
+                        });output.Flush(true);
+                    }
+                }
             }
         }
     }

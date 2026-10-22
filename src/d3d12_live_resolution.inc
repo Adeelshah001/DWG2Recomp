@@ -15,7 +15,8 @@ void D3D12CommandProcessor::Dwg2RememberResolve(uint32_t address,uint32_t length
      static_cast<uint32_t>(register_file_->Get<reg::RB_COPY_DEST_INFO>().copy_dest_format));
 }
 bool D3D12CommandProcessor::Dwg2ChangeResolution(uint32_t scale) {
- if(scale<1 || scale>3 || !texture_cache_ || !render_target_cache_)return false;
+ const dwg2::RenderScale profile{scale,1};
+ if(!profile.SupportedProfile() || !texture_cache_ || !render_target_cache_)return false;
  if(texture_cache_->draw_resolution_scale_x()==scale && texture_cache_->draw_resolution_scale_y()==scale)return true;
  uint32_t sx=scale,sy=scale;
  if(!D3D12TextureCache::ClampDrawResolutionScaleToMaxSupported(sx,sy,GetD3D12Provider()) || sx!=scale || sy!=scale)return false;
@@ -77,9 +78,10 @@ bool D3D12CommandProcessor::Dwg2ChangeResolution(uint32_t scale) {
   texture_cache_bindless_sampler_map_.clear();
  }
  current_guest_pipeline_=nullptr;current_external_pipeline_=nullptr;current_graphics_root_signature_=nullptr;
+ viewport_cache_valid_=false;
  InvalidateAllVertexBufferResidency();primitive_processor_->ClearCache();
  state.ranges.Clear();
- REXGPU_INFO("DWG2 live resolution applied: {}x, {}x{} internal/output target; frame resources rebuilt without restarting the title.",scale,1280*scale,720*scale);
+ REXGPU_INFO("DWG2 live resolution applied: {}x, {}x{} internal/output target; frame resources rebuilt without restarting the title.",scale,profile.ResourceExtent(1280),profile.ResourceExtent(720));
  return true;
 }
 void D3D12CommandProcessor::Dwg2ApplyResolutionRequest() {

@@ -8,11 +8,15 @@
 #include <rex/ui/window_sdl.h>
 #include "input_ui.h"
 #include "resolution_control.h"
+#include "camera_control.h"
 
 namespace dwg2::controls {
 constexpr UINT kPause = 41001, kQuit = 41002, kFullscreen = 41003;
+constexpr UINT kRestart = 41004;
+constexpr UINT kFovDefault=41060,kFovExtended=41061;
 constexpr UINT kScale1 = 41011, kScale3 = 41013, kHelp = 41020;
 constexpr UINT kConfigure = 41030;
+constexpr UINT kPromptAuto=41040,kPromptXbox=41041,kPromptPlayStation=41042,kHudCorrection=41050;
 constexpr UINT_PTR kReleaseStart = 0x44574732;
 constexpr UINT_PTR kResolutionTimer = 0x44574733;
 struct State {
@@ -39,6 +43,14 @@ inline void Sync(rex::ui::WindowSDL* owner) {
   if (GetMenu(hwnd) != desired) { SetMenu(hwnd, desired); DrawMenuBar(hwnd); }
   CheckMenuItem(s->menu, kFullscreen, MF_BYCOMMAND |
                 (owner->IsFullscreen() ? MF_CHECKED : MF_UNCHECKED));
+  CheckMenuRadioItem(s->menu,kPromptAuto,kPromptPlayStation,kPromptAuto+dwg2::prompts::choice.load(),MF_BYCOMMAND);
+  CheckMenuItem(s->menu,kHudCorrection,MF_BYCOMMAND|(dwg2::prompts::hud_correction.load()?MF_CHECKED:MF_UNCHECKED));
+  CheckMenuRadioItem(s->menu,kFovDefault,kFovExtended,kFovDefault+int(dwg2::camera::extended.load()),MF_BYCOMMAND);
+}
+inline bool SavePrompts(int choice,bool hud) {
+ auto path=dwg2::input::Root()/L"prompts.ini";auto temporary=path;temporary+=L".tmp";
+ {std::ofstream f(temporary);f<<choice<<' '<<int(hud)<<'\n';f.flush();if(!f)return false;}
+ return MoveFileExW(temporary.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)!=0;
 }
 inline LRESULT CALLBACK Procedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
                                    UINT_PTR id, DWORD_PTR data) {
@@ -48,6 +60,22 @@ inline LRESULT CALLBACK Procedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
   }
   if (msg == WM_COMMAND && HIWORD(wp) == 0) {
     UINT command = LOWORD(wp);
+    if(command==kFovDefault||command==kFovExtended) {
+      auto path=dwg2::input::Root()/L"camera.ini";auto temporary=path;temporary+=L".tmp";
+      const int extended=command==kFovExtended?1:0;bool written=false;
+      {std::ofstream file(temporary);file<<extended<<'\n';file.flush();written=bool(file);}
+      if(written&&MoveFileExW(temporary.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)) {
+        dwg2::camera::extended.store(extended!=0);Sync(s->owner);
+      } else MessageBoxW(hwnd,L"The camera setting could not be saved. Your previous setting is retained.",L"Field of view",MB_ICONERROR);
+      return 0;
+    }
+    if((command>=kPromptAuto&&command<=kPromptPlayStation)||command==kHudCorrection) {
+      int choice=command==kHudCorrection?dwg2::prompts::choice.load():int(command-kPromptAuto);
+      bool hud=dwg2::prompts::hud_correction.load();if(command==kHudCorrection)hud=!hud;
+      if(!SavePrompts(choice,hud))MessageBoxW(hwnd,L"Could not save prompt/display settings. Your previous settings are retained.",L"DWG2",MB_ICONERROR);
+      else {dwg2::prompts::choice.store(choice);dwg2::prompts::hud_correction.store(hud);Sync(s->owner);}
+      return 0;
+    }
     if (command == kConfigure) { dwg2::input::ShowEditor(hwnd); return 0; }
     if (command == kFullscreen) {
       s->owner->SetFullscreen(!s->owner->IsFullscreen()); return 0;
@@ -60,6 +88,20 @@ inline LRESULT CALLBACK Procedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
       return 0;
     }
     if (command == kQuit) { PostMessageW(hwnd, WM_CLOSE, 0, 0); return 0; }
+    if (command == kRestart) {
+      wchar_t name[128]{};
+      DWORD length=GetEnvironmentVariableW(L"DWG2_RESTART_EVENT",name,128);
+      HANDLE event=(length&&length<128)?OpenEventW(EVENT_MODIFY_STATE,FALSE,name):nullptr;
+      if(!event) {
+        MessageBoxW(hwnd,L"Start the game with START_DWG2.exe to use Restart.",L"Restart",MB_ICONINFORMATION);
+        return 0;
+      }
+      BOOL requested=SetEvent(event);
+      if(requested&&!PostMessageW(hwnd,WM_CLOSE,0,0)){ResetEvent(event);requested=FALSE;}
+      CloseHandle(event);
+      if(!requested)MessageBoxW(hwnd,L"Restart could not be requested. Your game is still running.",L"Restart",MB_ICONERROR);
+      return 0;
+    }
     if (command >= kScale1 && command <= kScale3) {
       int scale = int(command - kScale1 + 1);
       s->pending_scale=scale;
@@ -73,12 +115,16 @@ inline LRESULT CALLBACK Procedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
       MessageBoxW(hwnd,
         L"Dynasty Warriors: Gundam 2 Recomp - local v02 preview\n\n"
         L"Controls > Configure: keyboard, PS5 and Xbox remapping.\n"
+        L"Controls > Button Prompts: Auto, Xbox or PlayStation icons.\n"
+        L"View > HUD seam correction: toggle atlas-only sampling correction.\n"
         L"Fullscreen: PS5 touchpad click, Alt+Enter, or View > Fullscreen.\n"
         L"File > Pause / Resume sends Start regardless of your bindings.\n"
+        L"File > Restart starts a fresh game process through the launcher.\n"
+        L"View > Field of View: Default or a 10% wider perspective angle.\n"
         L"View > Resolution changes internal rendering and output live.\n"
         L"1x: 1280 x 720; 2x: 2560 x 1440; 3x: 3840 x 2160.\n"
         L"A resolution change may briefly rebuild GPU resources.\n"
-        L"Save from the game's menu before quitting.\n"
+        L"Save from the game's menu before restarting or quitting.\n"
         L"Keyboard and controller work together. Startup movies are skipped.",
         L"Help", MB_OK | MB_ICONINFORMATION);
       return 0;
@@ -132,8 +178,9 @@ inline void Install(rex::ui::WindowSDL* owner, SDL_Window* sdl) {
   HWND hwnd = static_cast<HWND>(owner->GetNativeWindowHandle());
   if (!hwnd || GetPropW(hwnd, L"DWG2.Controls")) return;
   HMENU menu = CreateMenu(), file = CreatePopupMenu(), view = CreatePopupMenu();
-  HMENU sizes = CreatePopupMenu(), help = CreatePopupMenu(), controls = CreatePopupMenu();
+  HMENU sizes = CreatePopupMenu(), help = CreatePopupMenu(), controls = CreatePopupMenu(), prompts=CreatePopupMenu(), fov=CreatePopupMenu();
   AppendMenuW(file, MF_STRING, kPause, L"&Pause / Resume");
+  AppendMenuW(file, MF_STRING, kRestart, L"&Restart");
   AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(file, MF_STRING, kQuit, L"&Quit Game");
   AppendMenuW(view, MF_STRING, kFullscreen, L"&Fullscreen\tAlt+Enter");
@@ -141,7 +188,15 @@ inline void Install(rex::ui::WindowSDL* owner, SDL_Window* sdl) {
   AppendMenuW(sizes, MF_STRING, kScale1+1, L"&2x - 2560 x 1440");
   AppendMenuW(sizes, MF_STRING, kScale3, L"&3x - 3840 x 2160");
   AppendMenuW(view, MF_POPUP, reinterpret_cast<UINT_PTR>(sizes), L"&Resolution");
+  AppendMenuW(view,MF_STRING,kHudCorrection,L"HUD seam correction");
+  AppendMenuW(fov,MF_STRING,kFovDefault,L"&Default");
+  AppendMenuW(fov,MF_STRING,kFovExtended,L"&Extended (+10%)");
+  AppendMenuW(view,MF_POPUP,reinterpret_cast<UINT_PTR>(fov),L"Field of &View");
   AppendMenuW(controls,MF_STRING,kConfigure,L"&Configure Controller / Keyboard...");
+  AppendMenuW(prompts,MF_STRING,kPromptAuto,L"&Auto");
+  AppendMenuW(prompts,MF_STRING,kPromptXbox,L"&Xbox");
+  AppendMenuW(prompts,MF_STRING,kPromptPlayStation,L"&PlayStation");
+  AppendMenuW(controls,MF_POPUP,reinterpret_cast<UINT_PTR>(prompts),L"Button &Prompts");
   AppendMenuW(help, MF_STRING, kHelp, L"&Controls and About");
   AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(file), L"&File");
   AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(view), L"&View");
@@ -153,6 +208,12 @@ inline void Install(rex::ui::WindowSDL* owner, SDL_Window* sdl) {
   }
   RECT client{};
   GetClientRect(hwnd, &client);
+  {std::ifstream in(dwg2::input::Root()/L"camera.ini");int extended=0;
+   if(in>>extended&&(extended==0||extended==1))dwg2::camera::extended.store(extended!=0);}
+  {std::ifstream in(dwg2::input::Root()/L"prompts.ini");int choice=0,hud=1;
+   if(in>>choice>>hud&&choice>=0&&choice<=2&&(hud==0||hud==1)) {
+    dwg2::prompts::choice.store(choice);dwg2::prompts::hud_correction.store(hud!=0);
+   }}
   Sync(owner);
   { int scale=1;std::ifstream in(SettingsPath());in>>scale;
     if(scale>=1 && scale<=3)CheckMenuRadioItem(menu,kScale1,kScale3,kScale1+scale-1,MF_BYCOMMAND); }

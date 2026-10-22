@@ -1,10 +1,12 @@
 #pragma once
 #include "input_config.h"
+#include "prompt_control.h"
 #include <windows.h>
 #include <SDL3/SDL.h>
 #include <filesystem>
 #include <fstream>
 #include <map>
+extern "C" int Dwg2NotifyInputActivity(int family,int controller);
 
 namespace dwg2::input {
 inline std::filesystem::path Root() {
@@ -28,6 +30,17 @@ inline std::mutex edges_mutex;
 inline std::map<unsigned long long,bool> fullscreen_edges;
 struct GateState { unsigned generation=0; bool wait=false; };
 inline std::map<unsigned long long,GateState> release_gates;
+inline std::map<unsigned long long,Raw> prompt_activity;
+inline void ObservePromptDevice(unsigned long long id,int family,const Raw& raw) {
+ std::lock_guard lock(edges_mutex);auto& previous=prompt_activity[id];bool changed=false;
+ for(size_t i=0;i<raw.buttons.size();++i)changed|=raw.buttons[i]&&!previous.buttons[i];
+ for(size_t i=0;i<raw.keys.size();++i)changed|=raw.keys[i]&&!previous.keys[i];
+ for(size_t i=0;i<raw.axes.size();++i)
+  changed|=std::abs(raw.axes[i])>.35f&&std::abs(raw.axes[i]-previous.axes[i])>.12f;
+ previous=raw;if(changed&&!editing.load()) {
+  Dwg2NotifyInputActivity(family,id!=0x100000000ull?1:0);
+ }
+}
 inline bool Gate(unsigned long long device,bool held) {
  std::lock_guard lock(edges_mutex);auto& gate=release_gates[device];const auto current=generation.load();
  if(editing.load() || (gate.generation && gate.generation!=current))gate.wait=true;
@@ -47,7 +60,10 @@ template<class Gamepad> inline void Pad(SDL_Gamepad* device,Gamepad& out,HWND wi
  if(SDL_GamepadConnected(device)) {
   auto raw=ReadPad(device);bool held=false;for(bool button:raw.buttons)held|=button;
   for(float axis:raw.axes)held|=std::abs(axis)>.25f;
-  if(!Gate(id,held) && active)result=Map(Get(Family(device)),raw);
+  if(!Gate(id,held) && active) {
+   result=Map(Get(Family(device)),raw);
+   ObservePromptDevice(id,Family(device)==1?2:1,raw);
+  }
  }
  Write(result,out);Shortcut(id,result.fullscreen,window);
 }
@@ -55,7 +71,9 @@ template<class Gamepad> inline void Keyboard(const bool (&keys)[256],Gamepad& ou
  Raw raw;std::copy(std::begin(keys),std::end(keys),raw.keys.begin());
  raw.mods=(keys[16]?1:0)|(keys[17]?2:0)|(keys[18]?4:0);
  bool held=false;for(bool key:raw.keys)held|=key;
- Output result;if(!Gate(0x100000000ull,held))result=Map(Get(0),raw);
+ Output result;if(!Gate(0x100000000ull,held)) {
+  result=Map(Get(0),raw);ObservePromptDevice(0x100000000ull,1,raw);
+ }
  if(pause_pressed.load() && !editing.load())result.buttons|=0x10;
  Write(result,out);Shortcut(0x100000000ull,result.fullscreen,window);
 }

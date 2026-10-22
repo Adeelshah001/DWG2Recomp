@@ -6,6 +6,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Threading;
 using System.Web.Script.Serialization;
 
 // Uses only packaged open-source tools. Generated title code never leaves this PC.
@@ -56,7 +57,7 @@ internal static class PortableBuild {
     }
     static string ResponseQuote(string text) { return "\""+text.Replace("\\","\\\\").Replace("\"","\\\"")+"\""; }
     static void Run(string name,string exe,IEnumerable<string> arguments,string work,Action<string> report) {
-        report(name);
+        report(name=="finish-game"?"Finalizing your game...":name=="prepare-headers"?"Preparing game resources...":"Preparing your game...");
         string logs=Path.Combine(work,"logs");Directory.CreateDirectory(logs);
         string rsp=Path.Combine(logs,name+".rsp");
         File.WriteAllLines(rsp,arguments.Select(ResponseQuote),new UTF8Encoding(false));
@@ -78,13 +79,15 @@ internal static class PortableBuild {
             if(child.ExitCode!=0) throw new InvalidOperationException(name+" failed. Your game and previous build are preserved. See "+Path.Combine(logs,name+".log"));
         }
     }
-    internal static void Prepare(Action<string> report) {
+    internal static void Prepare(Action<string> report,SetupProgress progress=null) {
+        if(progress!=null) progress.Report(0,"Checking setup package...");
         var recipe=Load();
         string archive=Path.Combine(CompressedPackage,"tools.zip");
         string metadata=Path.Combine(CompressedPackage,"package.json");
         if(!File.Exists(archive) || !File.Exists(metadata)) throw new FileNotFoundException("The compressed preparation tools are missing. Extract the complete player ZIP again.");
         var info=new JavaScriptSerializer().Deserialize<ArchiveInfo>(File.ReadAllText(metadata));
         if(info==null || info.format!=1 || info.expandedBytes<0 || Launcher.Hash(archive)!=info.sha256) throw new InvalidDataException("The compressed preparation tools are damaged. Extract the complete player ZIP again.");
+        if(progress!=null) progress.Report(0.03,"Expanding temporary preparation tools...");
         var expected=new Dictionary<string,Item>(StringComparer.OrdinalIgnoreCase);
         foreach(var file in recipe.files) {
             Inside(CompressedPackage,file.path);
@@ -103,27 +106,35 @@ internal static class PortableBuild {
                     string name=entry.FullName;
                     if(name.Contains("\\") || name.Contains(":") || name.Split('/').Any(x=>x=="" || x=="." || x=="..") || !expected.ContainsKey(name) || !seen.Add(name)) throw new InvalidDataException("Unexpected preparation archive entry.");
                     if(entry.Length<0 || total>info.expandedBytes-entry.Length) throw new InvalidDataException("Preparation archive size differs.");
-                    total+=entry.Length;string output=Inside(temporary,name);Directory.CreateDirectory(Path.GetDirectoryName(output));
-                    using(var input=entry.Open()) using(var stream=new FileStream(output,FileMode.CreateNew,FileAccess.Write)) input.CopyTo(stream);
+                    string output=Inside(temporary,name);Directory.CreateDirectory(Path.GetDirectoryName(output));
+                    using(var input=entry.Open()) using(var stream=new FileStream(output,FileMode.CreateNew,FileAccess.Write)) {
+                        byte[] buffer=new byte[1024*1024];int count;
+                        while((count=input.Read(buffer,0,buffer.Length))!=0) {
+                            stream.Write(buffer,0,count);total+=count;
+                            if(progress!=null) progress.Report(0.03+0.17*total/Math.Max(1,info.expandedBytes),"Expanding temporary preparation tools...");
+                        }
+                    }
                     if(Launcher.Hash(output)!=expected[name].sha256) throw new InvalidDataException("Damaged preparation component: "+name);
                 }
             }
             if(total!=info.expandedBytes || seen.Count!=expected.Count) throw new InvalidDataException("Incomplete preparation archive.");
             Package=temporary;
-            PrepareExpanded(report);
+            PrepareExpanded(report,progress==null?null:progress.Range(0.20,0.98));
         } finally {
             Package=CompressedPackage;
             // Only this unique owned tools directory is removed; imported games and saves are outside it.
             try { Directory.Delete(temporary,true); } catch(IOException) {} catch(UnauthorizedAccessException) {}
         }
+        if(progress!=null) progress.Report(1,"Preparation finished.");
     }
-    static void PrepareExpanded(Action<string> report) {
+    static void PrepareExpanded(Action<string> report,SetupProgress progress) {
         var r=Load();report("Checking bundled preparation tools...");
-        var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);int checkedFiles=0;
         foreach(var f in r.files) {
             if(!seen.Add(f.path)) throw new InvalidDataException("Duplicate portable package entry.");
             string path=Inside(Package,f.path);
-            if(!File.Exists(path) || Launcher.Hash(path)!=f.sha256) throw new InvalidDataException("The release package is missing or damaged: portable/"+f.path+". Extract the complete ZIP again.");
+            if(!File.Exists(path) || Launcher.Hash(path)!=f.sha256) throw new InvalidDataException("The release package is missing or damaged: "+f.path+". Extract the player ZIP again.");
+            checkedFiles++;if(progress!=null) progress.Report(0.04*checkedFiles/Math.Max(1,r.files.Length),"Checking preparation tools...");
         }
         string compiler=Inside(Package,r.compiler),generator=Inside(Package,r.generator);
         if(!seen.Contains(r.compiler) || !seen.Contains(r.generator)) throw new InvalidDataException("Unverified preparation tools.");
@@ -152,19 +163,23 @@ internal static class PortableBuild {
             if(!child.WaitForExit(15*60*1000)) { child.Kill();child.WaitForExit();throw new TimeoutException("Game preparation timed out. Your import is preserved. See "+work); }
             child.WaitForExit();if(child.ExitCode!=0) throw new InvalidOperationException("Could not prepare this game. Your import is preserved. See "+work);
         }
+        if(progress!=null) progress.Report(0.08,"Preparing game resources...");
         string generated=Path.Combine(work,"generated"),objects=Path.Combine(work,"objects");Directory.CreateDirectory(objects);
         string[] sources=Directory.GetFiles(generated,"*.cpp");Array.Sort(sources,StringComparer.Ordinal);
         if(sources.Length<2) throw new InvalidDataException("The generator produced no complete game translation.");
         string pch=Path.Combine(objects,"game.pch");
         var common=r.compile.Select(x=>Expand(x,work)).ToArray();
         Run("prepare-headers",compiler,common.Concat(new[]{"-x","c++-header",Path.Combine(generated,"dwg2_pch.h"),"-o",pch}),work,report);
-        var outputs=new string[sources.Length];
+        if(progress!=null) progress.Report(0.18,"Preparing your game...");
+        var outputs=new string[sources.Length];int completed=0;
         Parallel.For(0,sources.Length,new ParallelOptions{MaxDegreeOfParallelism=2},i=>{
             string output=Path.Combine(objects,i+".obj");outputs[i]=output;
             Run("prepare-part-"+i,compiler,common.Concat(new[]{"-include-pch",pch,"-c",sources[i],"-o",output}),work,report);
+            int finished=Interlocked.Increment(ref completed);if(progress!=null) progress.Report(0.18+0.75*finished/sources.Length,"Preparing your game...");
         });
         string staged=Path.Combine(work,"bin");Directory.CreateDirectory(staged);
         Run("finish-game",compiler,outputs.Concat(r.link.Select(x=>Expand(x,work))).Concat(new[]{"-o",Path.Combine(staged,"dwg2.exe")}),work,report);
+        if(progress!=null) progress.Report(0.97,"Installing your game executable...");
         foreach(var f in r.runtimeFiles) File.Copy(Inside(Package,f.source),Inside(staged,f.target));
         File.WriteAllLines(Path.Combine(staged,"portable-build.txt"),new[]{r.buildId,Launcher.XexHash,Launcher.Hash(Path.Combine(staged,"dwg2.exe"))});
         string bin=Path.Combine(Launcher.Root,"bin"),backup=null;
@@ -175,8 +190,10 @@ internal static class PortableBuild {
         }
         try { Directory.Move(staged,bin); }
         catch { if(backup!=null && !Directory.Exists(bin)) Directory.Move(backup,bin); throw; }
+        if(progress!=null) progress.Report(0.99,"Removing temporary preparation files...");
         report("Game prepared. Future launches reuse this executable.");
         // This unique owned workspace contains only transient generated output.
         try { Directory.Delete(work,true); } catch(IOException) {} catch(UnauthorizedAccessException) {}
+        if(progress!=null) progress.Report(1,"Game prepared.");
     }
 }

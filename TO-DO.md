@@ -15,23 +15,30 @@ Keep any remaining validation caveats in the entry.
   and pitch. Preserve reliable audio playback when entering or leaving fast forward.
 
 ## 3. Faster Saves, Loading and Automatic Startup
-- **Status:** Planned
+- **Status:** Startup autoload implemented locally; in-game validation pending; save speed/autosave remain planned
 - **Description:** Reduce save/load delays, add auto-save and streamline startup
   so returning players can continue without the repeated save/load selection
   screens. Load the existing save automatically when available.
 - **Notes:** Preserve data integrity and existing saves. Handle first-time setup,
   missing or damaged saves and failed writes explicitly. Skipping prompts must
   not discard progress or pretend a save succeeded.
+  Startup now uses the original load operation for occupied slot 01, only in the
+  startup load controller. Missing or structurally invalid data keeps the normal
+  UI. Original slot application and readiness/error paths remain; cosmetic load
+  delays are shortened. Manual saving/loading and autosaving are not changed.
+  Original-state-machine comparison and 14 scope/guard cases pass with explicit
+  UI/storage/deserializer doubles; full startup validation is still required.
 
 ## 4. Fix Background Music Stopping
-- **Status:** Investigating; no confirmed gameplay fix
+- **Status:** Local synchronization fix implemented; mission validation pending
 - **Description:** Background music stops after a few minutes of mission play,
   while other audio continues, and resumes when the soundtrack changes.
-- **Notes:** A previous isolated XMA synchronization candidate passed a host
-  regression, but it is not present in the current runtime and has not been
-  proven to fix this symptom. Verify stream refill, loop state and ownership of
-  producer/consumer offsets before promoting a fix. Include several track loops
-  and pause/resume in eventual gameplay validation.
+- **Notes:** The local runtime now serializes decoder and guest XMA context
+  access and preserves the guest-owned output consumer offset. Current-ABI
+  regression passes 200,000 concurrent record updates; restoring the stale
+  write fails the negative control. This corrects a verified race, but the
+  reported audible symptom still needs mission validation across several
+  track loops and pause/resume before this item is completed.
 
 ## 5. Intermediate Resolution Options
 - **Status:** Planned
@@ -42,7 +49,20 @@ Keep any remaining validation caveats in the entry.
   output. Renderer investigation comes first: the current scale, tiled resolve
   storage and live migration paths use integer scales. An output-only 1080p
   mode does not complete this item. Validate fractional target dimensions,
-  clipping, texture resolves and scale changes without restarting.
+  clipping, texture resolves and scale changes without restarting. Exact
+  rational coordinate/resource arithmetic is implemented, with 32,768
+  independent coverage checks passing; current integer scissor mapping uses
+  it. Experimental 3/2 GPU tile packing and tiled readback now pass for
+  8/16/32/64-bit pixels, including odd dimensions and partial tiles, while
+  retaining every high-resolution sample. Connecting this format to active
+  render targets, resolves, texture loads and migration remains unfinished, so no
+  1.5x menu option is exposed yet. Fixed stale viewport caching on live changes.
+  Rational scene color/depth allocation and viewport/scissor folding now draw
+  true 1920x1080 fragments in a headless GPU fixture. The rendered scene passes
+  through retained 3/2 tiles and native tiled readback with every sample checked.
+  Existing integer scales and live migration pass regression. Production
+  render-target ownership, texture-load formats, MSAA and live alias migration
+  still need integration; the player menu therefore remains 1x/2x/3x.
 
 ## 6. Automatic GitHub Release Updates
 - **Status:** Planned
@@ -68,24 +88,29 @@ Keep any remaining validation caveats in the entry.
   Current setup supports only the qualified original USA Xbox 360 version.
 
 ## 8. Correct HUD Seams at Higher Internal Resolutions
-- **Status:** Investigating; no confirmed fix
+- **Status:** Local atlas-specific sampling correction implemented; visual validation pending
 - **Description:** Remove faint rectangular edges and seams around HUD bars,
   portraits and counters at higher internal scales while preserving 3D detail.
 - **Notes:** Compare identical HUD draws at 1x/2x/3x and future 1.5x. Identify
   whether sampling, atlas borders, pixel-center alignment or clipping causes
   the defect. The renderer already has half-pixel correction; do not apply a
   global offset without draw-level evidence. Asset replacement is not yet
-  established as necessary.
+  established as necessary. View > HUD seam correction uses point/base-level
+  sampling only for fingerprinted HUD atlases when internally scaled; original
+  world filtering and native 1x sampling are preserved. The toggle permits
+  comparison with original filtering. User confirmation of the reported seams
+  is required before this item moves to Completed.
 
-## 9. PlayStation Button Prompts
-- **Status:** Planned; reference approach investigated
-- **Description:** Add Auto, Xbox and PlayStation prompt choices under Controls,
-  independently of keyboard/controller remapping and confirm/cancel bindings.
-- **Notes:** Identify this game's prompt textures and icon regions locally.
-  Replace only verified button regions with original host-drawn glyphs while
-  preserving UVs, alpha and atlas padding; retain original prompts on unknown
-  textures. Study Lost Odyssey Recomp's atlas identification approach without
-  reusing its game-specific atlas coordinates or distributing game assets.
+---
+
+## 10. Investigate Background/Idle Crash
+- **Status:** Investigating; original-fault diagnostics added locally
+- **Description:** Identify and fix the reported background crash with launcher
+  error -1073741795 (0xC000001D).
+- **Notes:** The supplied crash record confirms an illegal-instruction exception
+  re-raised through the game entry wrapper. Its original failing instruction is
+  absent from that dump. The local diagnostic build logs the original module
+  and offset before rethrow. The root cause and a fix are not confirmed.
 
 ---
 
@@ -106,3 +131,22 @@ Keep any remaining validation caveats in the entry.
 - ~~**Status:** Implemented in v0.2 Alpha; user validation pending~~
 - ~~**Description:** Add a Controls tab to the menu bar with controller remapping, saved mappings and a way to restore defaults. Keep keyboard and controller usable together, including the PS5 touch-pad full screen shortcut.~~
 - ~~**Notes:** Controls > Configure provides keyboard, PS5 and Xbox profiles, click-to-bind buttons/sticks/triggers, deadzones, defaults and saved mappings.~~
+
+### ~~9. PlayStation Button Prompts~~
+
+- ~~**Status:** Implemented in the local build; in-game and physical-controller validation pending~~
+- ~~**Description:** Controls > Button Prompts provides Auto, Xbox and PlayStation choices independently of remapping and confirm/cancel bindings. Auto follows actual keyboard/controller activity.~~
+- ~~**Notes:** Original host-drawn glyphs replace identified combat/menu face-button, shoulder, trigger and stick/menu icon regions; unknown textures retain their original pixels. Nine headless GPU upload/readback style transitions pass and preserve guest texture bytes. Settings persist in prompts.ini. Localized game text is retained. The options diagram now follows last actual Xbox/PlayStation controller activity independently of keyboard activity and forced prompt choice; Xbox restores the exact original compressed image. PlayStation uses CC0 Kenney PS5 artwork and monochrome vector-derived glyphs. Forty GPU diagram cases pass across tiled/linear storage and four byte orders. No game textures are packaged.~~
+
+
+### ~~11. Default and Extended Field of View~~
+
+- ~~**Status:** Implemented locally; in-game visual validation pending~~
+- ~~**Description:** View > Field of View offers Default and Extended (+10%), with live persistent changes.~~
+- ~~**Notes:** Adjusts the perspective angle through the original projection function, preserving aspect, depth and orthographic HUD rendering. Thirty original projection cases pass; Default is bit-identical to original output.~~
+
+### ~~12. Restart from the File Menu~~
+
+- ~~**Status:** Implemented locally; user validation pending~~
+- ~~**Description:** File > Restart closes the current process and starts a fresh game through the same launcher.~~
+- ~~**Notes:** A session-specific restart event preserves the imported game and settings. Clean restart, normal quit and crash-after-request tests pass; crashes never trigger automatic relaunch. Save progress before restarting.~~
