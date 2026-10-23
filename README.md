@@ -17,6 +17,6 @@ HUD/audio corrections pending gameplay validation. These changes have not yet
 replaced the v02 Alpha release download. True 1.5x rendering remains unfinished
 and is not exposed in the player menu. See [local preview notes](docs/LOCAL_PREVIEW.md).
 
-See [TEST_CHECKLIST.md](TEST_CHECKLIST.md), [To-Do](TO-DO.md), [BUILDING.md](BUILDING.md), [RELEASE_GUIDE.md](RELEASE_GUIDE.md) and [THIRD_PARTY_LICENSE.txt](THIRD_PARTY_LICENSE.txt).
+See [TEST_CHECKLIST.md](TEST_CHECKLIST.md), [BUILDING.md](BUILDING.md), [RELEASE_GUIDE.md](RELEASE_GUIDE.md) and [THIRD_PARTY_LICENSE.txt](THIRD_PARTY_LICENSE.txt).
 
 Player-only packaging: preparation tools stay in one compressed payload, expand only during first-time preparation/repair, and are cleaned up afterward. The developer source/relink ZIP is an optional separate release asset. Only v01 and v02 Alpha are release entries.
