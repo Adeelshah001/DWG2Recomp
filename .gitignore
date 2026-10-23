@@ -49,3 +49,5 @@ camera.ini*
 # The personal project plan is maintained outside this checkout.
 /TO-DO.md
 /WISHLIST.md
+
+/.updates/

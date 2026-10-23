@@ -1,0 +1,45 @@
+--- a/src/codegen/function_graph.cpp
++++ b/src/codegen/function_graph.cpp
+@@ -368,7 +368,7 @@
+ 
+     emit_println(out, "// STUB: Function at 0x{:08X} has no discovered code blocks", base());
+     emit_println(out, "DEFINE_REX_FUNC({}) {{", name);
+-    emit_println(out, "\tREX_FUNC_PROLOGUE();");
++    emit_println(out, "\tREX_FUNC_PROLOGUE(); DWG2_PAUSE_POINT();");
+     emit_println(out, "}}\n");
+     return out;
+   }
+@@ -480,7 +480,7 @@
+ 
+   // Function signature with weak/alias pattern
+   emit_println(out, "DEFINE_REX_FUNC({}) {{", name);
+-  emit_println(out, "\tREX_FUNC_PROLOGUE();");
++  emit_println(out, "\tREX_FUNC_PROLOGUE(); DWG2_PAUSE_POINT();");
+ 
+   // --- Second pass: emit instruction code ---
+   const JumpTable* activeJt = nullptr;
+@@ -511,6 +511,7 @@
+       // Only emit each label once
+       if (labels.find(blockBase) != labels.end() && emittedLabels.insert(blockBase).second) {
+         emit_println(body, "loc_{:X}:", blockBase);
++        emit_println(body, "\tDWG2_PAUSE_POINT();");
+         csrState = CSRState::Unknown;
+       }
+ 
+@@ -590,6 +591,16 @@
+         if (!DispatchInstruction(id, builderCtx)) {
+           REXCODEGEN_WARN("Unrecognized instruction at 0x{:X}: {}", blockBase, insn.opcode->name);
+           allRecompiled = false;
++        }
++
++        // A guest host-call may finish after Pause was requested. Park before
++        // its caller can execute another guest instruction or touch game state.
++        const uint32_t pause_instruction=load_and_swap<uint32_t>(data);
++        const uint32_t pause_primary=pause_instruction>>26;
++        const uint32_t pause_xo=(pause_instruction>>1)&1023;
++        if ((pause_instruction&1) && (pause_primary==16 || pause_primary==18 ||
++            (pause_primary==19 && (pause_xo==16 || pause_xo==528)))) {
++          emit_println(body,"\tDWG2_PAUSE_POINT();");
+         }
+ 
+         // Check for mid-asm hook AFTER instruction

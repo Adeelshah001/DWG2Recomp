@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$GameFolder)
+param([Parameter(Mandatory=$true)][string]$GameFolder,[string]$PreparedExecutable)
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -18,8 +18,8 @@ foreach($name in @('','.local-build','.update-backup','bin','preparation')) {
 }
 if(Get-Process -Name dwg2,START_DWG2 -ErrorAction SilentlyContinue) {throw 'Close the game and launcher before applying this update.'}
 $manifest=Get-Content -LiteralPath (Join-Path $payload 'update.json') -Raw | ConvertFrom-Json
-if($manifest.format -ne 1 -or !$manifest.localRuntimeUpdate) {throw 'Unsupported update manifest.'}
-$allowed=@('bin/rexruntime.dll','bin/rexgpu-xenos.dll','preparation-replacements/lib/librexruntime.dll.a','build.json')
+if($manifest.format -ne 1 -or !$manifest.localFeatureUpdate) {throw 'Unsupported update manifest.'}
+$allowed=@('START_DWG2.exe','bin/rexruntime.dll','bin/rexgpu-xenos.dll','preparation-replacements/lib/librexruntime.dll.a','preparation-replacements/lib/libdwg2-host.a','preparation-replacements/codegen/dwg2-generator.exe','preparation-replacements/include/guest_pause.h','build.json')
 if($manifest.files.Count -ne $allowed.Count) {throw 'Incomplete update.'}
 $seen=@{}
 foreach($item in $manifest.files) {
@@ -36,12 +36,17 @@ if($newRecipe.buildId -ne $manifest.buildId) {throw 'Build recipe does not match
 $marker=Get-Content -LiteralPath (Join-Path $root 'bin/portable-build.txt')
 if($marker.Count -ne 3 -or $marker[1] -ne '0be3f2e797a31df5d2a231635e4dc5520da36d4b9dbc7b995cf1bd3b0fedb86b' -or
    (Hash-File (Join-Path $root 'bin/dwg2.exe')) -ne $marker[2]) {throw 'The existing native executable does not match its installation record.'}
+if($PreparedExecutable) {
+    $PreparedExecutable=(Resolve-Path -LiteralPath $PreparedExecutable).Path
+    if((Get-Item -LiteralPath $PreparedExecutable).Attributes -band [IO.FileAttributes]::ReparsePoint) {throw 'Prepared executables must not be links.'}
+    if((Hash-File $PreparedExecutable) -ne $manifest.preparedExeSha256) {throw 'Prepared executable differs from this update.'}
+}
 $oldPackage=Get-Content -LiteralPath (Join-Path $root 'preparation/package.json') -Raw | ConvertFrom-Json
 if((Hash-File (Join-Path $root 'preparation/tools.zip')) -ne $oldPackage.sha256) {throw 'The existing preparation archive is damaged.'}
-$id='local-runtime-'+[Guid]::NewGuid().ToString('N')
+$id='local-features-'+[Guid]::NewGuid().ToString('N')
 $stage=Join-Path $root ('.local-build/'+$id)
 $backup=Join-Path $root ('.update-backup/'+$id)
-$targets=@('bin/rexruntime.dll','bin/rexgpu-xenos.dll','bin/portable-build.txt','preparation/build.json','preparation/package.json','preparation/tools.zip')
+$targets=@('START_DWG2.exe','bin/dwg2.exe','bin/rexruntime.dll','bin/rexgpu-xenos.dll','bin/portable-build.txt','preparation/build.json','preparation/package.json','preparation/tools.zip')
 [void](New-Item -ItemType Directory -Path $stage)
 [void](New-Item -ItemType Directory -Path $backup)
 $started=$false
@@ -55,6 +60,9 @@ try {
         $dest=Join-Path $stage $name
         [void](New-Item -ItemType Directory -Force -Path (Split-Path $dest))
     }
+    Copy-Item -LiteralPath (Join-Path $payload 'START_DWG2.exe') -Destination (Join-Path $stage 'START_DWG2.exe')
+    Copy-Item -LiteralPath (Join-Path $root 'bin/dwg2.exe') -Destination (Join-Path $stage 'bin/dwg2.exe')
+    if($PreparedExecutable){Copy-Item -LiteralPath $PreparedExecutable -Destination (Join-Path $stage 'bin/dwg2.exe') -Force}
     Copy-Item -LiteralPath (Join-Path $payload 'bin/rexruntime.dll') -Destination (Join-Path $stage 'bin/rexruntime.dll')
     Copy-Item -LiteralPath (Join-Path $payload 'bin/rexgpu-xenos.dll') -Destination (Join-Path $stage 'bin/rexgpu-xenos.dll')
     Copy-Item -LiteralPath (Join-Path $payload 'build.json') -Destination (Join-Path $stage 'preparation/build.json')
@@ -66,12 +74,15 @@ try {
             'runtime/rexruntime.dll'=(Join-Path $payload 'bin/rexruntime.dll');
             'runtime/rexgpu-xenos.dll'=(Join-Path $payload 'bin/rexgpu-xenos.dll');
             'lib/librexruntime.dll.a'=(Join-Path $payload 'preparation-replacements/lib/librexruntime.dll.a');
+            'lib/libdwg2-host.a'=(Join-Path $payload 'preparation-replacements/lib/libdwg2-host.a');
+            'codegen/dwg2-generator.exe'=(Join-Path $payload 'preparation-replacements/codegen/dwg2-generator.exe');
+            'include/guest_pause.h'=(Join-Path $payload 'preparation-replacements/include/guest_pause.h');
             'build.json'=(Join-Path $payload 'build.json')
         }
         foreach($entryName in $replacements.Keys) {
             $entry=$zip.GetEntry($entryName)
-            if(!$entry){throw "Missing preparation entry: $entryName"}
-            $entry.Delete()
+            if(!$entry -and $entryName -cne 'include/guest_pause.h'){throw "Missing preparation entry: $entryName"}
+            if($entry){$entry.Delete()}
             $entry=$zip.CreateEntry($entryName,[IO.Compression.CompressionLevel]::Optimal)
             $inputFile=[IO.File]::OpenRead($replacements[$entryName]);$outputFile=$entry.Open()
             try {$inputFile.CopyTo($outputFile)} finally {$inputFile.Dispose();$outputFile.Dispose()}
@@ -81,7 +92,7 @@ try {
     try {
         $expanded=[long]0
         foreach($entry in $zip.Entries){$expanded+=$entry.Length}
-        foreach($entryName in @('runtime/rexruntime.dll','runtime/rexgpu-xenos.dll','lib/librexruntime.dll.a')) {
+        foreach($entryName in @('runtime/rexruntime.dll','runtime/rexgpu-xenos.dll','lib/librexruntime.dll.a','lib/libdwg2-host.a','codegen/dwg2-generator.exe','include/guest_pause.h')) {
             $entry=$zip.GetEntry($entryName);$stream=$entry.Open();$algorithm=[Security.Cryptography.SHA256]::Create()
             try {$actual=([BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace('-','').ToLowerInvariant()}
             finally {$stream.Dispose();$algorithm.Dispose()}
@@ -92,10 +103,19 @@ try {
     $encoding=New-Object Text.UTF8Encoding($false)
     $metadata=@{format=1;sha256=(Hash-File $archivePath);expandedBytes=$expanded} | ConvertTo-Json
     [IO.File]::WriteAllText((Join-Path $stage 'preparation/package.json'),$metadata,$encoding)
-    [IO.File]::WriteAllLines((Join-Path $stage 'bin/portable-build.txt'),[string[]]@($newRecipe.buildId,$marker[1],$marker[2]),$encoding)
+    # A host-hook change needs a newly linked executable. Never relabel an old
+    # native binary as current. The launcher rebuilds from the existing import.
+    $stageBuildId=if($PreparedExecutable){$newRecipe.buildId}else{$marker[0]}
+    $stageExeHash=Hash-File (Join-Path $stage 'bin/dwg2.exe')
+    [IO.File]::WriteAllLines((Join-Path $stage 'bin/portable-build.txt'),[string[]]@($stageBuildId,$marker[1],$stageExeHash),$encoding)
     $started=$true
     foreach($name in $targets){[IO.File]::Replace((Join-Path $stage $name),(Join-Path $root $name),[NullString]::Value)}
-    [IO.File]::WriteAllText((Join-Path $backup 'RESTORE.txt'),"Close the game and launcher, then restore the six files in this folder to the same relative paths in your installation. Game files, saves and settings were not changed.",$encoding)
+    $prepare=Start-Process -FilePath (Join-Path $root 'START_DWG2.exe') -ArgumentList @('--no-launch') -WorkingDirectory $root -WindowStyle Hidden -Wait -PassThru
+    if($prepare.ExitCode -ne 0){throw 'The updated game could not be prepared. Previous executable and tools are being restored.'}
+    $installed=Get-Content -LiteralPath (Join-Path $root 'bin/portable-build.txt')
+    if($installed.Count -ne 3 -or $installed[0] -ne $newRecipe.buildId -or $installed[1] -ne $marker[1] -or
+       (Hash-File (Join-Path $root 'bin/dwg2.exe')) -ne $installed[2]){throw 'Prepared native executable verification failed.'}
+    [IO.File]::WriteAllText((Join-Path $backup 'RESTORE.txt'),"Close the game and launcher, then restore the eight files in this folder to the same relative paths in your installation. Game files, saves and settings were not changed.",$encoding)
     Write-Host "Local update installed. Rollback files: $backup"
 } catch {
     if($started){foreach($name in $targets){Copy-Item -LiteralPath (Join-Path $backup $name) -Destination (Join-Path $root $name) -Force}}

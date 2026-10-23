@@ -35,7 +35,7 @@ if(Test-Path -LiteralPath $xex) {
     $state=@(Get-Content -LiteralPath $marker)
     if($state.Count -lt 2 -or $state[1] -ne $supported -or !(Test-Path -LiteralPath (Join-Path $target 'bin\dwg2.exe'))) {throw 'Incompatible existing installation.'}
 }
-$allowed=@('START_DWG2.exe','READ_ME_FIRST.txt','START_HERE.txt','THIRD_PARTY_LICENSE.txt','TEST_CHECKLIST.md','apply-update.ps1','apply-portable-update.ps1')
+$allowed=@('START_DWG2.exe','READ_ME_FIRST.txt','START_HERE.txt','THIRD_PARTY_LICENSE.txt','TEST_CHECKLIST.md','apply-update.ps1','apply-portable-update.ps1','Apply-DownloadedUpdate.ps1','release.json')
 $seen=@{}
 foreach($item in $manifest.files) {
     if(($allowed -notcontains $item.path -and !$item.path.StartsWith('portable/',[StringComparison]::Ordinal) -and !$item.path.StartsWith('preparation/',[StringComparison]::Ordinal)) -or $seen.ContainsKey($item.path)) {throw 'Unexpected or duplicate update entry.'}

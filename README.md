@@ -1,22 +1,39 @@
 # Dynasty Warriors: Gundam 2 Recomp
 
-Windows x64 alpha launcher for the supported original USA Xbox 360 release. You supply your own legally obtained game ISO. No game files are distributed.
+Windows alpha launcher for the supported original USA Xbox360 edition. Import
+your own legally obtained ISO once; later launches reuse the prepared game.
+Game files and generated game code/executables are never distributed here.
 
-Download the single **player ZIP** from [Releases](https://github.com/Adeelshah001/DWG2Recomp/releases), extract it to a writable local folder, and run **START_DWG2.exe**. Select your ISO once. The launcher imports the game and prepares the native executable locally with its bundled tools. You do not need to install Visual Studio, Python, Git, CMake or a compiler. First preparation takes several minutes on the development laptop; other machines will vary. Later starts reuse the executable. Expanded preparation tools are temporary; only the compressed payload is kept for offline repair. Keep the whole extracted folder together.
+Download the single **DWG2Recomp-v03-alpha-player.zip** from
+[v03 Alpha](https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.3-alpha),
+extract it, and run **START_DWG2.exe**. Required preparation tools are bundled
+compressed, expand temporarily and are cleaned up after successful preparation.
+No separately installed development toolchain is required.
 
-Requires Windows 10/11 x64, an x86-64-v2/SSE4.1-capable CPU and a Direct3D 12 compatible GPU/driver. Allow several GB for the extracted game, preparation and backups. Preparation is offline after downloading this package. Other regions, modified executables, title updates and DLC have not been qualified. Unsupported images are rejected rather than silently translated.
+Existing users can apply the player package with its `apply-update.ps1`; imported
+game data, saves and settings are preserved. v03 is the first launcher with an
+automatic update check; installing it over v02 is a manual update. Subsequent
+public GitHub releases can be offered automatically.
 
-Existing users: extract the new player ZIP separately, close the launcher/game, then follow **START_HERE.txt** to apply it to your existing installation. Saves, imported game, controller mappings and display settings are preserved. The new launcher prepares a compatible executable once and retains the previous bin directory as a rollback backup.
+The startup update check runs concurrently with game launch. **Help > Check for
+Updates** checks manually. The update dialog supports keyboard/mouse and SDL
+controller face buttons: **Cross / A** accepts, **Circle / B** declines. Accepting
+downloads and verifies the package, then installs only after the game and launcher
+close. Save your progress before quitting. Offline or failed checks do not stop
+gameplay. Releases must be public; no credentials are bundled.
 
-Features retained: no intro, keyboard/PS5/Xbox remapping through Controls, File pause/quit, fullscreen (PS5 touchpad), and live internal/output 1x/2x/3x resolution. Physical controller and full-game validation remain pending. A successful preparation does not establish gameplay stability or stable 60 FPS. Gameplay/FPS testing and decompilation are currently paused.
+Features include keyboard/PS5/Xbox remapping, controller prompts/diagrams, fullscreen
+and PS5 touchpad shortcut, live1x/2x/3x internal/output resolution, live FOV slider,
+true runtime pause/resume, restart and no startup intro. Dedicated save screens
+automatically select slot01 using the original save operation when the existing
+container is valid; Options save/load and recovery/error paths remain available.
+First-time or invalid save containers retain the normal UI.
 
-The source on main also includes the newer local preview: setup progress,
-File > Restart, live Default/Extended (+10%) field of view, guarded slot 01
-startup autoload, controller-aware Xbox/PS5 artwork, PlayStation prompts and
-HUD/audio corrections pending gameplay validation. These changes have not yet
-replaced the v02 Alpha release download. True 1.5x rendering remains unfinished
-and is not exposed in the player menu. See [local preview notes](docs/LOCAL_PREVIEW.md).
+Known limitations: sustained music playback, background crashes, HUD correction,
+post-mission autosave and physical controller update navigation still need user
+gameplay confirmation. Stable60FPS is not certified. True1.5x/1080p rendering and
+FSR are not included in v03; the existing integer renderer is retained.
 
-See [TEST_CHECKLIST.md](TEST_CHECKLIST.md), [BUILDING.md](BUILDING.md), [RELEASE_GUIDE.md](RELEASE_GUIDE.md) and [THIRD_PARTY_LICENSE.txt](THIRD_PARTY_LICENSE.txt).
-
-Player-only packaging: preparation tools stay in one compressed payload, expand only during first-time preparation/repair, and are cleaned up afterward. The developer source/relink ZIP is an optional separate release asset. Only v01 and v02 Alpha are release entries.
+See [TEST_CHECKLIST.md](TEST_CHECKLIST.md), [BUILDING.md](BUILDING.md),
+[RELEASE_GUIDE.md](RELEASE_GUIDE.md) and [THIRD_PARTY_LICENSE.txt](THIRD_PARTY_LICENSE.txt).
+An optional developer source/relink asset is separate from the player download.

@@ -2,6 +2,7 @@
 #include <rex/codegen/codegen.h>
 #include <rex/logging.h>
 #include <fstream>
+#include <filesystem>
 #include <iostream>
 
 int main(int argc, char** argv) {
@@ -57,5 +58,12 @@ int main(int argc, char** argv) {
   if (!result || ctx.errors.HasErrors()) return 5;
   auto written = pipeline->RunWrite(false);
   if (!written) std::cerr << written.error().message << '\n';
+  if(written) {
+    // Own pause declarations live in the bundled host headers, not game inputs.
+    auto header=ctx.configDir()/ctx.Config().outDirectoryPath/(ctx.Config().projectName+"_pch.h");
+    std::ofstream append(header,std::ios::app);
+    append << "\n#include \"guest_pause.h\"\n";
+    if(!append)return 7;
+  }
   return written ? 0 : 6;
 }

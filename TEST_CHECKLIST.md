@@ -1,3 +1,24 @@
+# v03 Alpha checks
+
+Gameplay/FPS benchmarking remains paused. When you choose to test:
+
+- Open Help > Check for Updates: on v03 it should report the latest available build.
+- When a later release exists, check startup and manual prompts. Cross/A accepts;
+  Circle/B declines. Release any held button first. Mouse/keyboard also work.
+- Decline and confirm the current session continues. Accept downloads in the
+  background, then save and quit normally: installation happens after exit.
+- After the first manual v02-to-v03 update, expect one local preparation. Later
+  starts reuse the prepared game; imported data and settings should remain.
+- Finish a mission with a valid existing slot 01: the dedicated save screen
+  should choose it automatically and retain normal write completion/errors.
+  Reopen the game and confirm progress was saved. Missing/damaged saves retain
+  the original UI. This has bounded automated coverage, not mission validation.
+- FOV is a separate menu-bar item with a live Default to +50% slider in 5% steps.
+- File > Pause Game should freeze/resume the runtime. Menus themselves keep it running.
+- Music interruptions remain open: record mission timer, last healthy audio,
+  pause/focus changes and keep the matching logs.
+- Resolution remains live integer 1x/2x/3x; true 1080p is unfinished and not included.
+
 ## Later local preview (when manual testing resumes)
 
 - [ ] With an existing slot 01, start through START_DWG2.exe and confirm startup
@@ -14,8 +35,7 @@
 - [ ] If a crash recurs, retain the newest logs. The diagnostic line beginning
       `DWG2 native fault` identifies the original module and offset.
 
-These checks are optional until gameplay testing resumes. The source preview
-does not update the existing GitHub release download.
+These checks are optional until gameplay testing resumes. These are manual validation instructions, not a claim of completed gameplay testing.
 
 ## Smaller player package
 

@@ -1,4 +1,4 @@
-DWG2 Recomp v02 Alpha — Windows x64
+DWG2 Recomp v03 Alpha — Windows x64
 
 1. Extract the entire player ZIP to a writable local folder.
 2. Run START_DWG2.exe and choose your own supported original USA Xbox 360 ISO.
@@ -17,3 +17,9 @@ Saves, controls.ini, display.ini and imported game data stay local.
 Controls menu: keyboard, PS5 and Xbox mapping. View > Resolution: live 1x/2x/3x
 internal rendering and output; Fullscreen hides the menu. PS5 touchpad toggles fullscreen.
 No intro retained. Gameplay/FPS testing remains paused; stable 60 FPS is not certified.
+
+Help > Check for Updates and a background startup check offer newer public GitHub releases.
+Cross/A accepts; Circle/B declines. Installation waits until the game closes.
+FOV is a separate menu item with a live Default to +50% slider.
+Dedicated save screens automatically select existing slot01 through original save logic.
+Music interruptions remain under investigation. True1080p is not yet included.

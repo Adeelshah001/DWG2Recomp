@@ -37,17 +37,17 @@ def main():
  (prep/'package.json').write_text(json.dumps({'format':1,'sha256':digest(prep/'tools.zip'),'expandedBytes':expanded},indent=2))
  subprocess.run(['powershell.exe','-NoProfile','-ExecutionPolicy','Bypass','-File',str(repo/'scripts/build-launcher.ps1'),'-Output',str(stage/'START_DWG2.exe')],check=True)
  for n in ['READ_ME_FIRST.txt','START_HERE.txt','THIRD_PARTY_LICENSE.txt','TEST_CHECKLIST.md']:shutil.copyfile(repo/n,stage/n)
- for n in ['apply-update.ps1','apply-portable-update.ps1']:shutil.copyfile(repo/'scripts'/n,stage/n)
- payload=[f.relative_to(stage).as_posix() for f in sorted(stage.rglob('*')) if f.is_file()]
- (stage/'update.json').write_text(json.dumps({'version':a.version,'portableBuild':True,'compressedPreparation':True,'files':[{'path':n,'sha256':digest(stage/n)} for n in payload]},indent=2))
+ for n in ['apply-update.ps1','apply-portable-update.ps1','Apply-DownloadedUpdate.ps1']:shutil.copyfile(repo/'scripts'/n,stage/n)
  commit=subprocess.check_output(['git','-C',str(repo),'rev-parse','HEAD'],text=True).strip()
  (stage/'release.json').write_text(json.dumps({'version':a.version,'sourceCommit':commit,'gameFilesIncluded':False,'separateToolchainRequired':False,'compressedPreparation':True,'portableBuildId':recipe['buildId']},indent=2))
+ payload=[f.relative_to(stage).as_posix() for f in sorted(stage.rglob('*')) if f.is_file()]
+ (stage/'update.json').write_text(json.dumps({'version':a.version,'portableBuild':True,'compressedPreparation':True,'files':[{'path':n,'sha256':digest(stage/n)} for n in payload]},indent=2))
  (stage/'SHA256SUMS.txt').write_text(''.join(digest(f)+'  '+f.relative_to(stage).as_posix()+'\n' for f in sorted(stage.rglob('*')) if f.is_file()))
- dest=out/('DWG2Recomp-v02-alpha-player.zip')
+ dest=out/('DWG2Recomp-v'+a.version.replace('0.','',1)+'-player.zip')
  with zipfile.ZipFile(dest,'w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
   for f in sorted(stage.rglob('*')):
    if f.is_file():z.write(f,f.relative_to(stage).as_posix(),compress_type=zipfile.ZIP_STORED if f.name=='tools.zip' else zipfile.ZIP_DEFLATED)
- if a.host_source_relink:shutil.copyfile(a.host_source_relink,out/'DWG2Recomp-v02-alpha-developer-source-relink.zip')
+ if a.host_source_relink:shutil.copyfile(a.host_source_relink,out/'DWG2Recomp-v'+a.version.replace('0.','',1)+'-developer-source-relink.zip')
  result={'zip':str(dest),'bytes':dest.stat().st_size,'sha256':digest(dest),'playerFiles':sum(f.is_file() for f in stage.rglob('*')),'expandedPlayerBytes':sum(f.stat().st_size for f in stage.rglob('*') if f.is_file()),'temporaryToolsBytes':expanded,'removedPreparationFiles':len(removed),'keptPreparationFiles':len(kept)}
  (out/'package-result.json').write_text(json.dumps(result,indent=2));print(json.dumps(result),flush=True)
 

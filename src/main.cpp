@@ -1,12 +1,13 @@
 #include <rex/ppc/context.h>
 #include <rex/image_info.h>
 #include "camera_control.h"
-extern "C" __declspec(dllimport) int Dwg2ExtendedFov();
+#include <bit>
+extern "C" __declspec(dllimport) int Dwg2FovPercent();
 extern "C" void __imp__sub_82386940(PPCContext&,uint8_t*);
 // Original host hook over the generated weak alias. Direct and indirect calls
 // both reach this entry; the always-original generated implementation is kept.
 extern "C" void sub_82386940(PPCContext& ctx,uint8_t* base) {
-  if(Dwg2ExtendedFov())ctx.f1.f64=dwg2::camera::ExtendedAngle(ctx.f1.f64);
+  ctx.f1.f64=dwg2::camera::AdjustedAngle(ctx.f1.f64,Dwg2FovPercent());
   __imp__sub_82386940(ctx,base);
 }
 // Guest implementations and mappings are generated from the user's ISO locally.
@@ -27,7 +28,29 @@ extern "C" void sub_82166B38(PPCContext&, uint8_t*);
 #include <rex/system/function_dispatcher.h>
 #include <rex/cvar.h>
 #include <rex/logging.h>
+#include "camera_refresh.h"
+extern "C" void __imp__sub_8211A220(PPCContext&,uint8_t*);
+extern "C" void __imp__sub_823862B8(PPCContext&,uint8_t*);
+static thread_local dwg2::camera::RefreshTracker dwg2_camera_refresh;
+static void Dwg2RefreshCamera(PPCContext& ctx,uint8_t* base) {
+  const uint32_t object=ctx.r3.u32;
+  const int percent=Dwg2FovPercent();
+  if(dwg2_camera_refresh.NeedsRefresh(object,percent)) {
+    const uint32_t dirty=object+353;
+    *(volatile uint8_t*)(base+dirty+DWG2_PHYS_OFFSET(dirty))=1;
+    if(percent)
+      REXLOG_INFO("DWG2 FOV: refreshing camera 0x{:08X}, projection mode {}, original angle {}, boost {}%",
+        object,REX_LOAD_U32(object+344),std::bit_cast<float>(REX_LOAD_U32(object+328)),percent);
+  }
+}
+extern "C" void sub_8211A220(PPCContext& ctx,uint8_t* base) {
+  Dwg2RefreshCamera(ctx,base);__imp__sub_8211A220(ctx,base);
+}
+extern "C" void sub_823862B8(PPCContext& ctx,uint8_t* base) {
+  Dwg2RefreshCamera(ctx,base);__imp__sub_823862B8(ctx,base);
+}
 #include "startup_load.h"
+#include "automatic_save.h"
 extern "C" void __imp__sub_82115E08(PPCContext&,uint8_t*);
 extern "C" void __imp__sub_82114688(PPCContext&,uint8_t*);
 static std::atomic<bool> dwg2_startup_load_attempted{false};
@@ -56,7 +79,25 @@ extern "C" void sub_82115E08(PPCContext& ctx,uint8_t* base) {
     REX_STORE_U32(object+1772,25);REX_STORE_U32(object+1824,0);
     REXLOG_INFO("DWG2 startup: loading slot 01 through original load operation");
   };
-  begin_load();__imp__sub_82115E08(ctx,base);begin_load();
+  auto begin_save=[&] {
+    dwg2::saving::Snapshot s;s.caller=caller;
+    if(caller!=0x8216D360&&caller!=0x8227E76C)return;
+    s.mode=REX_LOAD_U32(object+1752);s.state=REX_LOAD_U32(object+1748);s.ready=REX_LOAD_U32(object+1808);
+    if(s.mode!=0||s.state!=5||s.ready!=2)return;
+    s.buffer=REX_LOAD_U32(object+1760);
+    if(!s.buffer||uint64_t(s.buffer)+0x00334000>0x100000000ULL)return;
+    s.magic=REX_LOAD_U32(s.buffer);s.count=REX_LOAD_U32(s.buffer+4);s.stride=REX_LOAD_U32(s.buffer+8);
+    s.occupied=REX_LOAD_U32(s.buffer+12);s.data_offset=REX_LOAD_U32(s.buffer+36);
+    if(!dwg2::saving::CanSaveFirstSlot(s))return;
+    // Same state/message as accepting an overwrite of slot01. The original
+    // state7 save operation, completion polling and error presentation run.
+    // No write, serializer result, success flag or I/O wait is fabricated.
+    REX_STORE_U32(object+1756,0);REX_STORE_U32(object+1748,7);
+    PPCContext action=ctx;action.r3.u32=object;action.r4.u32=10;
+    __imp__sub_82114688(action,base);
+    REXLOG_INFO("DWG2 automatic save: selected slot01 through original save operation, caller={:08X}",caller);
+  };
+  begin_load();begin_save();__imp__sub_82115E08(ctx,base);begin_load();begin_save();
 }
 REXCVAR_DEFINE_BOOL(dwg2_skip_startup_logos, true, "DWG2", "Skip startup branding using original pre-title storage transition");
 static void Dwg2BootInit(PPCContext& ctx, uint8_t* base) {
@@ -98,6 +139,9 @@ class Dwg2App : public rex::ReXApp {
     auto* dispatcher = runtime()->function_dispatcher();
     if(dispatcher->GetFunction(0x82386940)!=&sub_82386940)
       throw std::runtime_error("DWG2 perspective hook does not match this game build");
+    if(dispatcher->GetFunction(0x8211A220)!=&sub_8211A220||
+       dispatcher->GetFunction(0x823862B8)!=&sub_823862B8)
+      throw std::runtime_error("DWG2 camera refresh hooks do not match this game build");
     if(dispatcher->GetFunction(0x82115E08)!=&sub_82115E08)
       throw std::runtime_error("DWG2 startup load hook does not match this game build");
     if (dispatcher->GetFunction(0x821669F8) != &sub_821669F8 ||

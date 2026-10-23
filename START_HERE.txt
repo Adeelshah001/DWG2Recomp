@@ -1,19 +1,29 @@
-DWG2 Recomp v02 Alpha — player package
+DWG2 Recomp v03 Alpha
 
-NEW INSTALLATION
-Extract the ZIP fully, run START_DWG2.exe and select your own supported USA Xbox360 ISO.
-No Visual Studio, Python, Git, CMake, separate compiler or Xbox SDK installation is needed.
-First import/preparation takes a few minutes. Later launches reuse the result.
+New installation: extract the entire player ZIP, run START_DWG2.exe and select
+your own supported original USA Xbox360 ISO. The launcher prepares it locally.
+No separate compiler/toolchain installation is required. Import is only needed once.
 
-EXISTING INSTALLATION
-1. Close the game and launcher. Extract this ZIP into a NEW temporary folder.
-2. Open PowerShell in that extracted folder.
-3. Run (replace the example path with your existing launcher folder):
-   powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./apply-update.ps1 -GameFolder "C:\Games\DWG2"
-4. Start START_DWG2.exe in your EXISTING folder. Compatible existing executables are reused; older builds may prepare once.
-The update verifies its files and preserves game-data, saves, settings and the old executable.
-The old bin directory is backed up in bin-backups only after successful preparation.
-Do not mix individual runtime DLLs between old and new builds.
+Existing v01/v02/local installation: close the game and launcher. Extract this
+ZIP separately, then run PowerShell:
 
-The optional developer-source-relink release asset supplies matching host source and relink material.
-Players need only the player ZIP. No ISO, game executable or generated title code is included.
+  .\apply-update.ps1 -GameFolder 'C:\path\to\your\installation' -Package $PWD
+
+Run START_DWG2.exe in your existing folder afterward. A changed native build may
+prepare once using the already imported game; saves/settings stay in place.
+v02 cannot detect v03 automatically because the updater first ships in v03.
+
+v03 checks public GitHub releases in the background on startup. Help > Check for
+Updates performs a manual check. Cross/A accepts; Circle/B declines. Accepting
+downloads a verified update, then waits until the game and launcher close before
+installing and restarting. Save your progress before quitting. You can keep
+playing after declining. Internet access is optional for normal play.
+
+Automatic save selects slot01 on recognized dedicated save screens using the
+original save operation. Missing/invalid containers retain normal recovery UI.
+Never close the game while it is writing a save.
+
+Menus: File (Pause/Resume, Restart, Quit), View (Fullscreen,1x/2x/3x resolution,
+HUD seam correction), FOV (Default..+50%,5%steps), Controls, Help.
+True1.5x1080p is not included in this release. Known music/background-crash
+issues remain under investigation. No game data is included in the download.

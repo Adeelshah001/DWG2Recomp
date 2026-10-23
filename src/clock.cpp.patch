@@ -1,0 +1,39 @@
+--- a/src/core/clock.cpp
++++ b/src/core/clock.cpp
+@@ -14,6 +14,7 @@
+ #include <mutex>
+ 
+ #include <rex/chrono/clock.h>
++#include "runtime_pause.h"
+ #include <rex/cvar.h>
+ #include <rex/math.h>
+ 
+@@ -64,7 +65,7 @@
+ // Update the guest timer for all threads.
+ // Return a copy of the value so locking is reduced.
+ uint64_t UpdateGuestClock() {
+-  uint64_t host_tick_count = Clock::QueryHostTickCount();
++  uint64_t host_tick_count = dwg2::pause::ActiveTicks(Clock::QueryHostTickCount());
+ 
+   if (REXCVAR_GET(clock_no_scaling)) {
+     // Nothing to update, calculate on the fly
+@@ -91,7 +92,8 @@
+ // Offset of the current guest system file time relative to the guest base time.
+ inline uint64_t QueryGuestSystemTimeOffset() {
+   if (REXCVAR_GET(clock_no_scaling)) {
+-    return Clock::QueryHostSystemTime() - guest_system_time_base_;
++    return Clock::QueryHostSystemTime() - guest_system_time_base_ -
++      dwg2::pause::ExcludedTicks(Clock::QueryHostTickCount()) * 10000000 / Clock::QueryHostTickFrequency();
+   }
+ 
+   auto guest_tick_count = UpdateGuestClock();
+@@ -162,7 +164,8 @@
+ 
+ uint64_t Clock::QueryGuestSystemTime() {
+   if (REXCVAR_GET(clock_no_scaling)) {
+-    return Clock::QueryHostSystemTime();
++    return Clock::QueryHostSystemTime() -
++      dwg2::pause::ExcludedTicks(Clock::QueryHostTickCount()) * 10000000 / Clock::QueryHostTickFrequency();
+   }
+ 
+   auto guest_system_time_offset = QueryGuestSystemTimeOffset();

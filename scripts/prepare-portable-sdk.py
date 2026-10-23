@@ -20,7 +20,7 @@ def main():
   if not target.resolve().is_relative_to(out):raise ValueError('Patch path escapes SDK copy')
   target.parent.mkdir(parents=True,exist_ok=True)
   target.write_text(m.apply_patch(target.read_text() if target.exists() else '',text))
- for name in ['input_config.h','input_host.h','input_ui.h','window_controls.h','dwg2_metrics.h','resolution_control.h','resolved_ranges.h','d3d12_live_resolution.inc','xma_synchronization.h','prompt_control.h','ui_atlas.h','input_art.h','input_art_decode.h','ui_atlas_fingerprints.h','d3d12_ui_atlas.inc','render_scale.h','scene_scale.h','camera_control.h','startup_load.h']:
+ for name in ['fov_ui.h','camera_refresh.h','automatic_save.h','runtime_pause.h','guest_pause.h','input_config.h','input_host.h','input_ui.h','window_controls.h','dwg2_metrics.h','resolution_control.h','resolved_ranges.h','d3d12_live_resolution.inc','xma_synchronization.h','prompt_control.h','ui_atlas.h','input_art.h','input_art_decode.h','ui_atlas_fingerprints.h','d3d12_ui_atlas.inc','render_scale.h','scene_scale.h','camera_control.h','startup_load.h']:
   shutil.copyfile(repo/'src'/name,out/'include'/name)
  shutil.copytree(repo/'src',out/'dwg2-host/src')
  print('Patched private SDK:',out)

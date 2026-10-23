@@ -9,8 +9,12 @@ internal static class GameSession {
     internal const string RestartVariable="DWG2_RESTART_EVENT";
     internal static void Run(ProcessStartInfo info,TextWriter log) {
         string name="Local\\DWG2-Restart-"+Guid.NewGuid().ToString("N");
+        using(var updates=new UpdateService(Launcher.Root))
         using(var restart=new EventWaitHandle(false,EventResetMode.ManualReset,name)) {
             info.EnvironmentVariables[RestartVariable]=name;
+            info.EnvironmentVariables[UpdateService.EventVariable]=updates.EventName;
+            info.EnvironmentVariables["DWG2_LAUNCHER_PID"]=Process.GetCurrentProcess().Id.ToString();
+            updates.Start();
             do {
                 restart.Reset();
                 using(var p=new Process()) {
