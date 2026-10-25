@@ -1,7 +1,6 @@
 <p align="center">
   <img src="assets/logo.png" alt="Dynasty Warriors: Gundam 2" width="400">
 </p>
-<h2 align="center">Recomp</h2>
 <p align="center">A Windows PC recompilation of Dynasty Warriors: Gundam 2.</p>
 <p align="center"><a href="https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.3-alpha"><strong>Download v03 Alpha</strong></a></p>
 
