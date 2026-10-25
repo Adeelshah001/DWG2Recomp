@@ -37,8 +37,10 @@ HOST DEPENDENCIES (v02 Alpha)
 The runtime statically links FFmpeg and libmspack under LGPL terms.
 Modification and reverse engineering for debugging those modifications are permitted.
 The matching dependency source, build definitions and host-only relink objects are
-provided as the optional DWG2Recomp-v03-alpha-developer-source-relink.zip
-asset on the v0.3-alpha GitHub release. Players need only the player ZIP.
+provided in DWG2Recomp-v02-v03-license-source.zip on the v0.3-alpha GitHub
+release. It contains the unchanged, version-matched v02 and v03 source/relink
+archives. This license/source archive is not needed to install or play the game.
+Players need only DWG2Recomp-v03-alpha-player.zip.
 No game executable, game object or proprietary SDK is included or needed to relink the host DLLs.
 
 
