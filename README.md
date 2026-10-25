@@ -10,7 +10,7 @@
 - Keyboard, Xbox and PlayStation controller support with remappable controls.
 - Xbox and PlayStation button prompts and controller diagrams.
 - Live 1x, 2x and 3x internal rendering and output resolution.
-- Live field-of-view slider, from Default to +50%.
+- Live field-of-view slider, from Default to +50%. (Experimental)
 - Fullscreen, pause/resume and restart from the menu bar.
 - One-time ISO import, prepared-game reuse and skipped startup movies.
 - Startup save loading and automatic slot selection on supported save screens.
@@ -41,6 +41,6 @@ Save through the game's menus before quitting or restarting. Saves and settings 
 
 Built with [ReXGlue](https://github.com/rexglue/rexglue-sdk), based on [Xenia](https://github.com/xenia-project/xenia). Bundled third-party components retain their respective licenses; see [license notices](THIRD_PARTY_LICENSE.txt).
 
-[License/source archive](https://github.com/Adeelshah001/DWG2Recomp/releases/download/v0.3-alpha/DWG2Recomp-v02-v03-license-source.zip) — corresponding source, build definitions and host-only relink materials for v02/v03. **Not required to play.**
+[License/source archive](https://github.com/Adeelshah001/DWG2Recomp/releases/download/v0.3-alpha/DWG2Recomp-v02-v03-license-source.zip) â€” corresponding source, build definitions and host-only relink materials for v02/v03. **Not required to play.**
 
 This is an unofficial fan project. The original game, logo and trademarks belong to their respective rights holders. No rights to the original game content are granted by this project.
