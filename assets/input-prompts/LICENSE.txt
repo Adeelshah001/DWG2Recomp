@@ -1,7 +1,0 @@
-Kenney Input Prompts 1.5 (downloaded 2026-10-21)
-Author: Kenney
-License: Creative Commons Zero (CC0 1.0)
-https://creativecommons.org/publicdomain/zero/1.0/
-Source: https://kenney.nl/assets/input-prompts
-Downloaded ZIP SHA256: ac2fcf599080b0f3ba2d174c9474db6df1a0e96ff0662580e2da79a122ab78a1
-Controller callout layout adapted for DWG2 by this project.
