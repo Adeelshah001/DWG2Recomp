@@ -15,7 +15,7 @@
 - Startup save loading and automatic slot selection on supported save screens.
 - Automatic update checks and **Help > Check for Updates**.
 
-**Alpha status:** Music interruptions, background crashes, expanded-FOV visibility and HUD issues remain under investigation. Save behavior still needs wider gameplay testing. Stable 60 FPS is not guaranteed; true 1080p/1.5x rendering and FSR are not included.
+**Alpha status:** Music interruptions, background crashes, expanded-FOV visibility and HUD issues remain under investigation. Save behavior still needs wider gameplay testing. Stable 60 FPS is not guaranteed; true 1080p/1.5x rendering is not included at the moment.
 
 ## Requirements
 
