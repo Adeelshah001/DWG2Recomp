@@ -4,7 +4,7 @@
   <img src="assets/logo.png" alt="Dynasty Warriors: Gundam 2" width="400">
 </p>
 <p align="center">A Windows PC recompilation of Dynasty Warriors: Gundam 2.</p>
-<p align="center"><a href="https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.3-alpha"><strong>Download v03 Alpha</strong></a></p>
+<p align="center"><a href="https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.4-alpha"><strong>Download v04 Alpha</strong></a></p>
 
 ## Features
 
@@ -16,8 +16,37 @@
 - One-time ISO import, prepared-game reuse and skipped startup movies.
 - Startup save loading and automatic slot selection on supported save screens.
 - Automatic update checks and **Help > Check for Updates**.
+- Native-style title-screen Quit Game confirmation with B / Circle.
+- In-game Graphics/Video options and one editable **settings.ini**.
+- Desktop shortcut creation and the **DWG2R.exe** launcher.
 
-**Alpha status:** Music interruptions, background crashes, expanded-FOV visibility and HUD issues remain under investigation. Save behavior still needs wider gameplay testing. Stable 60 FPS is not guaranteed; true 1080p/1.5x rendering is not included at the moment.
+**Alpha status:** The reported resolution-switching memory-exhaustion freeze is addressed in v04. Music interruptions, longer-session stability, expanded-FOV visibility and HUD issues remain under investigation. Save behavior still needs wider gameplay testing. Stable 60 FPS is not guaranteed; true 1080p/1.5x rendering is not included at the moment.
+
+## Feature previews
+
+### Quit Game confirmation
+
+At PRESS START, B / Circle opens the native-style confirmation popup.
+
+![Quit Game screenshot placeholder](assets/features/quit-game-placeholder.svg)
+
+<!-- Replace the image above with assets/features/quit-game.png when supplied. -->
+
+### In-game Graphics/Video options
+
+Display and camera preferences are available in-game and in settings.ini. Menu appearance is still being refined.
+
+![Graphics options screenshot placeholder](assets/features/graphics-options-placeholder.svg)
+
+<!-- Replace the image above with assets/features/graphics-options.png when supplied. -->
+
+### Field of view
+
+The existing FOV slider supports Default through +50%. Expanded-FOV visibility remains experimental.
+
+![FOV animation placeholder](assets/features/fov-placeholder.svg)
+
+<!-- Replace the image above with assets/features/fov.gif when supplied. -->
 
 ## Requirements
 
@@ -30,9 +59,9 @@ No game files are included. No separate developer tools or SDK installation is r
 
 ## Quick start
 
-1. Download **DWG2Recomp-v03-alpha-player.zip** from [v03 Alpha](https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.3-alpha).
+1. Download **DWG2Recomp-v04-alpha-player.zip** from [v04 Alpha](https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.4-alpha).
 2. Extract the entire ZIP into a writable folder. Keep its contents together.
-3. Run **START_DWG2.exe** and select your supported ISO.
+3. Run **DWG2R.exe** and select your supported ISO.
 4. Allow the first-time import and preparation to finish. Later launches reuse the prepared game.
 5. Open **Controls** to configure inputs, **View** for resolution/fullscreen, or **FOV** to adjust the field of view.
 
@@ -42,6 +71,6 @@ Save through the game's menus before quitting or restarting. Saves and settings 
 
 Built with [ReXGlue](https://github.com/rexglue/rexglue-sdk), based on [Xenia](https://github.com/xenia-project/xenia). Bundled third-party components retain their respective licenses; see [license notices](THIRD_PARTY_LICENSE.txt).
 
-[License/source archive](https://github.com/Adeelshah001/DWG2Recomp/releases/download/v0.3-alpha/DWG2Recomp-v02-v03-license-source.zip) — corresponding source, build definitions and host-only relink materials for v02/v03. **Not required to play.**
+[License/source archive](https://github.com/Adeelshah001/DWG2Recomp/releases/download/v0.3-alpha/DWG2Recomp-v02-v03-license-source.zip) — corresponding SDK/dependency source, build definitions and host-only relink materials for v02/v03. v04 host additions are under `licenses/v04-host-source.zip` in the player/update package. **Not required to play.**
 
 This is an unofficial fan project. The original game, logo and trademarks belong to their respective rights holders. No rights to the original game content are granted by this project.
