@@ -28,25 +28,22 @@
 
 At PRESS START, B / Circle opens the native-style confirmation popup.
 
-![Quit Game screenshot placeholder](assets/features/quit-game-placeholder.svg)
+![Quit Game confirmation](assets/features/quit-game.png)
 
-<!-- Replace the image above with assets/features/quit-game.png when supplied. -->
 
 ### In-game Graphics/Video options
 
 Display and camera preferences are available in-game and in settings.ini. Menu appearance is still being refined.
 
-![Graphics options screenshot placeholder](assets/features/graphics-options-placeholder.svg)
+![In-game Graphics / Video settings](assets/features/graphics-options.png)
 
-<!-- Replace the image above with assets/features/graphics-options.png when supplied. -->
 
 ### Field of view
 
 The existing FOV slider supports Default through +50%. Expanded-FOV visibility remains experimental.
 
-![FOV animation placeholder](assets/features/fov-placeholder.svg)
+![FOV slider showcase](assets/features/fov.gif)
 
-<!-- Replace the image above with assets/features/fov.gif when supplied. -->
 
 ## Requirements
 
