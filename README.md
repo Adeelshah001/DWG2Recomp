@@ -20,7 +20,7 @@
 - In-game Graphics/Video options and one editable **settings.ini**.
 - **DWG2R.exe** launcher with desktop shortcut creation; existing shortcuts are retained on updates.
 
-**Alpha status:** The reported resolution-switching memory-exhaustion freeze is addressed in v04. Music interruptions, longer-session stability, expanded-FOV visibility and HUD issues remain under investigation. Save behavior still needs wider gameplay testing. Stable 60 FPS is not guaranteed; true 1080p/1.5x rendering is not included at the moment.
+**Alpha status:** Music interruptions, longer-session stability, expanded-FOV visibility and HUD issues remain under investigation. Save behavior still needs wider gameplay testing. Stable 60 FPS is not guaranteed; true 1080p/1.5x rendering is not included at the moment.
 
 ## Feature previews
 
