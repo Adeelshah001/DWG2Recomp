@@ -1,4 +1,5 @@
-> **AI usage disclosure:** This recompilation project was developed entirely using ChatGPT Codex (OpenAI). The original game and its assets remain the work of their respective creators.
+> [!NOTE]
+> **AI usage disclosure:** This recompilation project was developed entirely using ChatGPT Codex (OpenAI).
 
 <p align="center">
   <img src="assets/logo.png" alt="Dynasty Warriors: Gundam 2" width="400">
