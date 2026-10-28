@@ -10,7 +10,7 @@
 
 - Keyboard, Xbox and PlayStation controller support with remappable controls.
 - Xbox and PlayStation button prompts and controller diagrams.
-- Live 1x, 2x and 3x internal rendering and output resolution.
+- Live 1x(720p), 2x(1440p) and 3x(2160p) internal rendering and output resolution.
 - Live field-of-view slider, from Default to +50%. (Experimental)
 - Fullscreen, pause/resume and restart from the menu bar.
 - One-time ISO import, prepared-game reuse and skipped startup movies.
