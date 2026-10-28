@@ -26,15 +26,15 @@
 
 <table>
   <tr>
-    <th width="50%">Quit Game</th>
-    <th width="50%">Graphics Settings</th>
+    <th width="50%">Quit Game from Title Screen</th>
+    <th width="50%">Graphics/Video Settings</th>
   </tr>
   <tr>
     <td width="50%"><img src="assets/features/quit-game.png" alt="Quit Game confirmation" width="100%"></td>
     <td width="50%"><img src="assets/features/graphics-options.png" alt="In-game graphics settings" width="100%"></td>
   </tr>
   <tr>
-    <th colspan="2">Field of View</th>
+    <th colspan="2">Field of View (Default to +50%)</th>
   </tr>
   <tr>
     <td colspan="2"><img src="assets/features/fov.gif" alt="Field-of-view slider showcase" width="100%"></td>
