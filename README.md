@@ -24,26 +24,22 @@
 
 ## Feature previews
 
-### Quit Game confirmation
-
-At PRESS START, B / Circle opens the native-style confirmation popup.
-
-![Quit Game confirmation](assets/features/quit-game.png)
-
-
-### In-game Graphics/Video options
-
-Display and camera preferences are available in-game and in settings.ini. Menu appearance is still being refined.
-
-![In-game Graphics / Video settings](assets/features/graphics-options.png)
-
-
-### Field of view
-
-The existing FOV slider supports Default through +50%. Expanded-FOV visibility remains experimental.
-
-![FOV slider showcase](assets/features/fov.gif)
-
+<table>
+  <tr>
+    <th width="50%">Quit Game</th>
+    <th width="50%">Graphics Settings</th>
+  </tr>
+  <tr>
+    <td width="50%"><img src="assets/features/quit-game.png" alt="Quit Game confirmation" width="100%"></td>
+    <td width="50%"><img src="assets/features/graphics-options.png" alt="In-game graphics settings" width="100%"></td>
+  </tr>
+  <tr>
+    <th colspan="2">Field of View</th>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="assets/features/fov.gif" alt="Field-of-view slider showcase" width="100%"></td>
+  </tr>
+</table>
 
 ## Requirements
 
