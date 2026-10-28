@@ -4,7 +4,7 @@
   <img src="assets/logo.png" alt="Dynasty Warriors: Gundam 2" width="400">
 </p>
 <p align="center">A Windows PC recompilation of Dynasty Warriors: Gundam 2.</p>
-<p align="center"><a href="https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.4.1-alpha"><strong>Download v04.1 Alpha</strong></a></p>
+<p align="center"><a href="https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.4.3-alpha"><strong>Download v04.3 Alpha</strong></a></p>
 
 ## Features
 
@@ -18,7 +18,7 @@
 - Automatic update checks and **Help > Check for Updates**.
 - Native-style title-screen Quit Game confirmation with B / Circle.
 - In-game Graphics/Video options and one editable **settings.ini**.
-- **DWG2R.exe** launcher with desktop shortcut creation and automatic shortcut/icon refresh on updates.
+- **DWG2R.exe** launcher with desktop shortcut creation; existing shortcuts are retained on updates.
 
 **Alpha status:** The reported resolution-switching memory-exhaustion freeze is addressed in v04. Music interruptions, longer-session stability, expanded-FOV visibility and HUD issues remain under investigation. Save behavior still needs wider gameplay testing. Stable 60 FPS is not guaranteed; true 1080p/1.5x rendering is not included at the moment.
 
@@ -52,13 +52,13 @@ No game files are included. No separate developer tools or SDK installation is r
 
 ## Quick start
 
-1. Download **DWG2Recomp-v04.1-alpha-player.zip** from [v04.1 Alpha](https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.4.1-alpha).
+1. Download **DWG2Recomp-v04.3-alpha-player.zip** from [v04.3 Alpha](https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.4.3-alpha).
 2. Extract the entire ZIP into a writable folder. Keep its contents together.
 3. Run **DWG2R.exe** and select your supported ISO.
 4. Allow the first-time import and preparation to finish. Later launches reuse the prepared game.
 5. Open **Controls** to configure inputs, **View** for resolution/fullscreen, or **FOV** to adjust the field of view.
 
-Save through the game's menus before quitting or restarting. Saves and settings stay in your local installation. Existing v03 installations can check for newer releases through **Help > Check for Updates**; an accepted update waits until the game and launcher close before applying.
+Save through the game's menus before quitting or restarting. Saves and settings stay in your local installation. Existing v04/v04.1 installations can update through **Help > Check for Updates**. Save your progress before accepting the close-and-install prompt.
 
 ## License and credits
 
