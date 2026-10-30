@@ -5,9 +5,11 @@
   <img src="assets/logo.png" alt="Dynasty Warriors: Gundam 2" width="400">
 </p>
 <p align="center">A Windows PC recompilation of Dynasty Warriors: Gundam 2.</p>
-<p align="center"><a href="https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.5.1-alpha"><strong>Download v05.1 Alpha</strong></a></p>
+<p align="center"><a href="https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.6-alpha"><strong>Download v06 Alpha</strong></a></p>
 
 ## Features
+
+- Fixed pause-menu Graphics / Video resetting the active player profile.
 
 - Keyboard, Xbox and PlayStation controller support with remappable controls.
 - Xbox and PlayStation button prompts and controller diagrams.
@@ -24,6 +26,8 @@
 - Optional ISO detection from the **game** folder, plus frontmost setup and update progress.
 
 **Alpha status:** Music interruptions, longer-session stability, expanded-FOV visibility and HUD issues remain under investigation. Save behavior still needs wider gameplay testing. Stable 60 FPS is not guaranteed; true 1080p/1.5x rendering is not included at the moment.
+
+An already-affected interim checkpoint is not repaired by v06. If Restart fails or shows the wrong character, start the affected mission again from its original Official Mode or Mission Mode selection. Keep a save backup; the broader character/SP issue remains under investigation.
 
 ## Feature previews
 
@@ -55,7 +59,7 @@ No game files are included. No separate developer tools or SDK installation is r
 
 ## Quick start
 
-1. Download **DWG2Recomp.zip** from [v05.1 Alpha](https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.5.1-alpha).
+1. Download **DWG2Recomp.zip** from [v06 Alpha](https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.6-alpha).
 2. Extract the entire ZIP into a writable folder. Keep its contents together.
 3. Optionally put your supported USA Xbox 360 ISO in the **game** folder, then run **DWG2R.exe**. If no supported ISO is found there, setup asks you to choose it.
 4. Allow the first-time import and preparation to finish. Later launches reuse the prepared game.
@@ -67,6 +71,6 @@ Save through the game's menus before quitting or restarting. Saves and settings 
 
 Built with [ReXGlue](https://github.com/rexglue/rexglue-sdk), based on [Xenia](https://github.com/xenia-project/xenia). Bundled third-party components retain their respective licenses; see [license notices](THIRD_PARTY_LICENSE.txt).
 
-[License/source archive](https://github.com/Adeelshah001/DWG2Recomp/releases/download/v0.3-alpha/DWG2Recomp-v02-v03-license-source.zip) â€” corresponding SDK/dependency source, build definitions and host-only relink materials for v02/v03. Current v05.1 host/launcher additions and SDK patches are under `licenses/host-source.zip` inside the player package. **Not required to play.**
+[License/source archive](https://github.com/Adeelshah001/DWG2Recomp/releases/download/v0.3-alpha/DWG2Recomp-v02-v03-license-source.zip) â€” corresponding SDK/dependency source, build definitions and host-only relink materials for v02/v03. Current v06 host/launcher additions and SDK patches are under `licenses/host-source.zip` inside the player package. **Not required to play.**
 
 This is an unofficial fan project. The original game, logo and trademarks belong to their respective rights holders. No rights to the original game content are granted by this project.
