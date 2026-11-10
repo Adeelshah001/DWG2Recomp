@@ -9,13 +9,11 @@
 
 ## Features
 
-- Fixed pause-menu Graphics / Video resetting the active player profile.
-
 - Keyboard, Xbox and PlayStation controller support with remappable controls.
 - Xbox and PlayStation button prompts and controller diagrams.
 - Live 1x(720p), 2x(1440p) and 3x(2160p) internal rendering and output resolution.
 - Live field-of-view slider, from Default to +50%. (Experimental)
-- Remembered fullscreen settings, L2/LT and F11 shortcuts, pause/resume and restart.
+- Remembered fullscreen settings, L2/LT and F11 full-screen shortcuts, pause/resume and restart.
 - One-time ISO import, prepared-game reuse and skipped startup movies.
 - Incremental updates reuse unchanged compiled game parts.
 - Startup save loading and automatic slot selection on supported save screens.
