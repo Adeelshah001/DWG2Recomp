@@ -1,0 +1,11 @@
+--- a/include/rex/ui/windowed_app_context_sdl.h
++++ b/include/rex/ui/windowed_app_context_sdl.h
+@@ -35,6 +35,8 @@
+   void PlatformQuitFromUIThread() override;
+ 
+   int RunMainMessageLoop();
++  // Drain renderer/UI work from native Windows menu/dialog message loops.
++  void PumpNativeLoop();
+ 
+   // Custom SDL event type carrying a coalesced paint request for a window
+   // (user.windowID identifies the target).

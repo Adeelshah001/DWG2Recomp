@@ -67,10 +67,39 @@ No game files are included. No separate developer tools or SDK installation is r
 
 Save through the game's menus before quitting or restarting. Saves and settings stay in your local installation. On v05 and later, use **Help > Check for Updates**. Save your progress before accepting the close-and-install prompt. Compatible updates keep your prepared executable or reuse cached compiled parts. Compiler/shared-interface changes can still require fuller preparation.
 
-## License and credits
+## Building from source
 
-Built with [ReXGlue](https://github.com/rexglue/rexglue-sdk), based on [Xenia](https://github.com/xenia-project/xenia). Bundled third-party components retain their respective licenses; see [license notices](THIRD_PARTY_LICENSE.txt).
+The launcher, host layer, scripts and SDK patches are all here. **No game content is
+included and none is ever needed in a checkout**: the title executable is generated on
+the machine that owns a supported ISO.
 
-[License/source archive](https://github.com/Adeelshah001/DWG2Recomp/releases/download/v0.3-alpha/DWG2Recomp-v02-v03-license-source.zip) â€” corresponding SDK/dependency source, build definitions and host-only relink materials for v02/v03. Current v06 host/launcher additions and SDK patches are under `licenses/host-source.zip` inside the player package. **Not required to play.**
+- [BUILDING.md](BUILDING.md) - toolchain, the pinned ReXGlue SDK, and the three build
+  paths (launcher only, local runtime, player package).
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - how recompilation, the preparation cache
+  and the updater fit together.
+- [AGENTS.md](AGENTS.md) - the same material organised for AI coding assistants.
 
-This is an unofficial fan project. The original game, logo and trademarks belong to their respective rights holders. No rights to the original game content are granted by this project.
+Keep your own legally obtained USA ISO outside Git. Do not commit game data, generated
+title code, compiled objects, caches, saves or logs.
+
+## Contributing
+
+Bug reports, fixes and feature work are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md)
+first. The short version: keep game content out of the repository, keep existing player
+saves and settings working, and state plainly what you tested on real hardware.
+
+## License
+
+This project's own source - the host layer, launcher, scripts and SDK patches - is
+licensed under the **GNU General Public License v3.0**; see [LICENSE](LICENSE). That is
+the same license as the other Xbox 360 recompilation projects this work builds on.
+
+Built with [ReXGlue](https://github.com/rexglue/rexglue-sdk), based on
+[Xenia](https://github.com/xenia-project/xenia). Bundled third-party components keep
+their own licenses (BSD-3-Clause, MIT and others); see
+[license notices](THIRD_PARTY_LICENSE.txt). Those notices are not optional: they apply to
+any build you distribute.
+
+This is an unofficial fan project. The original game, logo and trademarks belong to their
+respective rights holders. No rights to the original game content are granted by this
+project, and no game code, asset or executable is distributed here.

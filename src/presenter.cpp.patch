@@ -1,0 +1,25 @@
+--- a/src/ui/presenter.cpp
++++ b/src/ui/presenter.cpp
+@@ -1,3 +1,4 @@
++#include "dwg2_metrics.h"
+ /**
+  ******************************************************************************
+  * Xenia : Xbox 360 Emulator Research Project                                 *
+@@ -1495,6 +1496,17 @@
+ }
+ 
+ Presenter::PaintResult Presenter::PaintAndPresent(bool execute_ui_drawers) {
++  // Avoid host repaint ticks repeatedly submitting the same game image.
++  // Allow connection recovery and occasional UI refresh if guest output stops.
++  static auto last_actual_paint = std::chrono::steady_clock::now();
++  const auto now = std::chrono::steady_clock::now();
++  const auto mailbox = guest_output_mailbox_acquired_and_ready_.load(std::memory_order_acquire);
++  if (dwg2_diag::swaps.load(std::memory_order_relaxed) > 0 && (mailbox & 3) == (mailbox >> 2) &&
++      surface_paint_connection_was_optimal_at_successful_paint_ &&
++      now - last_actual_paint < std::chrono::milliseconds(100))
++    return PaintResult::kNotPresented;
++  last_actual_paint = now;
++
+   assert_false(execute_ui_drawers && !is_in_ui_thread_paint_);
+   assert_true(surface_paint_connection_state_ == SurfacePaintConnectionState::kConnectedPaintable);
+   PaintResult result = PaintAndPresentImpl(execute_ui_drawers);

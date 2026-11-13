@@ -1,0 +1,22 @@
+--- a/include/rex/graphics/d3d12/texture_cache.h
++++ b/include/rex/graphics/d3d12/texture_cache.h
+@@ -244,6 +244,8 @@
+       bool operator!=(const SRVDescriptorKey& other_key) const { return !(*this == other_key); }
+     };
+ 
++    int dwg2_atlas_kind=0,dwg2_prompt_style=1;
++    std::vector<uint8_t> dwg2_original;
+     ID3D12Resource* GetOrCreate3DAs2DResource(D3D12_RESOURCE_STATES end_state);
+ 
+     explicit D3D12Texture(D3D12TextureCache& texture_cache, const TextureKey& key,
+@@ -279,6 +281,10 @@
+     // For bindless - indices in the global shader-visible descriptor heap.
+     std::unordered_map<SRVDescriptorKey, uint32_t, SRVDescriptorKey::Hasher> srv_descriptors_;
+   };
++
++  friend struct Dwg2HostTest;
++  void Dwg2RecognizeAtlas(D3D12Texture& texture);
++  void Dwg2ApplyAtlas(D3D12Texture& texture);
+ 
+   static constexpr uint32_t kSRVDescriptorCachePageSize = 65536;
+ 

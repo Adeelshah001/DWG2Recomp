@@ -1,0 +1,11 @@
+#pragma once
+#include "player_settings.h"
+#include "input_config.h"
+namespace dwg2::input {
+inline constexpr const char* setting_actions[Count]={"a","b","x","y","lb","rb","lt","rt","back","start","l3","r3","up","down","left","right","left_stick_up","left_stick_down","left_stick_left","left_stick_right","right_stick_up","right_stick_down","right_stick_left","right_stick_right","fullscreen"};
+inline constexpr const char* setting_profiles[3]={"controls.keyboard","controls.playstation","controls.xbox"};
+inline std::string BindingText(const Binding& b){return std::to_string(b.kind)+","+std::to_string(b.code)+","+std::to_string(b.sign)+","+std::to_string(b.mods);}
+inline bool ParseBinding(std::string text,Binding& b,int type){if(std::count(text.begin(),text.end(),',')!=3)return false;std::replace(text.begin(),text.end(),',',' ');std::istringstream in(text);Binding next;if(!(in>>next.kind>>next.code>>next.sign>>next.mods))return false;in>>std::ws;if(!in.eof()||!Valid(next,type))return false;b=next;return true;}
+inline bool LoadPlayerControls(const dwg2::settings::Document& doc,std::array<Profile,3>& result){auto data=result;for(int type=0;type<3;++type){auto& p=data[type];auto dz=doc.Get(setting_profiles[type],"deadzone");if(!dz.empty()&&(!dwg2::settings::Number(dz,p.deadzone)||p.deadzone<0||p.deadzone>50))return false;for(int i=0;i<Count;++i){auto name=std::string(setting_actions[i]);auto value=doc.Get(setting_profiles[type],name);if(!value.empty()&&!ParseBinding(value,p.bind[i],type))return false;value=doc.Get(setting_profiles[type],name+".alternate");if(!value.empty()&&!ParseBinding(value,p.alternate[i],type))return false;}}result=data;return true;}
+inline bool SavePlayerControls(const std::array<Profile,3>& data){std::map<std::string,std::string> changes;for(int type=0;type<3;++type){auto prefix=std::string(setting_profiles[type])+"/";if(data[type].deadzone<0||data[type].deadzone>50)return false;changes[prefix+"deadzone"]=std::to_string(data[type].deadzone);for(int i=0;i<Count;++i){if(!Valid(data[type].bind[i],type)||!Valid(data[type].alternate[i],type))return false;changes[prefix+setting_actions[i]]=BindingText(data[type].bind[i]);changes[prefix+setting_actions[i]+".alternate"]=BindingText(data[type].alternate[i]);}}return dwg2::settings::Update(dwg2::settings::Path(),changes);}
+}

@@ -1,0 +1,7 @@
+{
+  "clang": "C:\\\\dwg2\\\\llvm-mingw\\\\bin\\\\clang++.exe",
+  "sdk_source": "C:\\\\dwg2\\\\sdk-patched",
+  "sdk_build": "C:\\\\dwg2\\\\sdk-build",
+  "generator": "C:\\\\dwg2\\\\sdk-build\\\\dwg2-generator.exe",
+  "work": "C:\\\\dwg2\\\\work"
+}

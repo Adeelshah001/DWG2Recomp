@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate repository
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Check no game data / binaries / personal paths
+        run: python scripts/check_no_game_data.py
+
+      - name: Check whitespace and line endings
+        run: git diff --check
+
+      - name: Verify launcher builds
+        run: powershell -ExecutionPolicy Bypass -File scripts/build-launcher.ps1 -Output .\DWG2R.exe
+        shell: pwsh
+
+      - name: Verify launcher runs (headless Ready check)
+        run: |
+          .\DWG2R.exe --help 2>&1 | Select-String -Pattern "DWG2R|Usage|Help" -Quiet
+        shell: pwsh
+
+  # Optional: build the host layer to verify config/compiler.json is sound
+  # Requires the pinned SDK and llvm-mingw in the runner cache (not provided here).
+  # host-layer:
+  #   name: Build host layer (requires private SDK cache)
+  #   runs-on: windows-latest
+  #   if: false
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Build libdwg2-host.a
+  #       run: python scripts/build-host-library.py --toolchain ... --sdk-source ... --sdk-build ... --output libdwg2-host.a
