@@ -1,5 +1,5 @@
 > [!NOTE]
-> **AI usage disclosure:** This recompilation project was developed entirely using ChatGPT Codex (OpenAI).
+> **AI usage disclosure:** This recompilation project was developed entirely using AI.
 
 <p align="center">
   <img src="assets/logo.png" alt="Dynasty Warriors: Gundam 2" width="400">
