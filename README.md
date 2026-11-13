@@ -5,9 +5,11 @@
   <img src="assets/logo.png" alt="Dynasty Warriors: Gundam 2" width="400">
 </p>
 <p align="center">A Windows PC recompilation of Dynasty Warriors: Gundam 2.</p>
-<p align="center"><a href="https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.6-alpha"><strong>Download v06 Alpha</strong></a></p>
+<p align="center"><a href="https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.7-alpha"><strong>Download v07 Alpha</strong></a></p>
 
 ## Features
+
+- Fixed a failed or short save write being reported to the game as a successful save.
 
 - Keyboard, Xbox and PlayStation controller support with remappable controls.
 - Xbox and PlayStation button prompts and controller diagrams.
@@ -25,7 +27,7 @@
 
 **Alpha status:** Music interruptions, longer-session stability, expanded-FOV visibility and HUD issues remain under investigation. Save behavior still needs wider gameplay testing. Stable 60 FPS is not guaranteed; true 1080p/1.5x rendering is not included at the moment.
 
-An already-affected interim checkpoint is not repaired by v06. If Restart fails or shows the wrong character, start the affected mission again from its original Official Mode or Mission Mode selection. Keep a save backup; the broader character/SP issue remains under investigation.
+An already-affected interim checkpoint or save is not repaired by v07. If Restart fails or shows the wrong character, start the affected mission again from its original Official Mode or Mission Mode selection. Keep a save backup; the broader character/SP issue remains under investigation.
 
 ## Feature previews
 
@@ -57,7 +59,7 @@ No game files are included. No separate developer tools or SDK installation is r
 
 ## Quick start
 
-1. Download **DWG2Recomp.zip** from [v06 Alpha](https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.6-alpha).
+1. Download **DWG2Recomp.zip** from [v07 Alpha](https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.7-alpha).
 2. Extract the entire ZIP into a writable folder. Keep its contents together.
 3. Optionally put your supported USA Xbox 360 ISO in the **game** folder, then run **DWG2R.exe**. If no supported ISO is found there, setup asks you to choose it.
 4. Allow the first-time import and preparation to finish. Later launches reuse the prepared game.
