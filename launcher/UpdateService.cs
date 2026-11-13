@@ -16,7 +16,6 @@ using System.Windows.Forms;
 
 // Original launcher updater. Network/disk work never runs on the game thread.
 internal sealed class UpdateService : IDisposable {
-    internal const string Version="0.7-alpha";
     internal const string EventVariable="DWG2_UPDATE_EVENT";
     internal const string Repository="Adeelshah001/DWG2Recomp";
     internal const string Releases="https://api.github.com/repos/"+Repository+"/releases?per_page=20";
@@ -106,7 +105,7 @@ internal sealed class UpdateService : IDisposable {
     static HttpWebResponse Open(string url,int timeout) {
         for(int redirects=0;redirects<=5;++redirects) {
             if(!AllowedUrl(url))throw new InvalidDataException("Unexpected update download address.");
-            var request=(HttpWebRequest)WebRequest.Create(url);request.UserAgent="DWG2Recomp/"+Version;
+            var request=(HttpWebRequest)WebRequest.Create(url);request.UserAgent="DWG2Recomp/"+Launcher.Version;
             request.Accept="application/vnd.github+json";request.AllowAutoRedirect=false;
             request.Timeout=timeout;request.ReadWriteTimeout=timeout;
             var response=(HttpWebResponse)request.GetResponse();int status=(int)response.StatusCode;
@@ -135,7 +134,7 @@ internal sealed class UpdateService : IDisposable {
                     string metadata=null;
                     if(manual)RunProgress("Checking for updates",delegate(Action<string,long,long> report) {report("Checking GitHub for a newer release...",0,0);metadata=Metadata();});
                     else metadata=Metadata();
-                    Release release=Select(metadata,Version,testChannel);
+                    Release release=Select(metadata,Launcher.Version,testChannel);
                     if(!stopped) {
                         if(release==null){if(manual)ShowInformation("No update available","You have the latest available build.");Log("No newer compatible player package.");}
                         else if(manual||declined!=release.Tag) {

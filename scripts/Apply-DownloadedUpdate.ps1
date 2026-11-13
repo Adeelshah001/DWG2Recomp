@@ -129,57 +129,35 @@ try {
     }} catch {Add-Content -Encoding UTF8 -LiteralPath $log -Value 'Update installed; completion notification could not be recorded.'}
 
     if(!$NoLaunch) {
-        Show-UpdateProgress 'Starting updated launcher...' 0 0
-        # Start the new launcher visibly so we can track it; it will prepare and launch the game.
-        $launcherProc=Start-Process -FilePath $launcher -WorkingDirectory $target -PassThru
-        if($launcherProc) {
-            Show-UpdateProgress 'Launcher started. Preparing game if needed...' 0 0
-            # Wait for the launcher to start the game process (dwg2.exe)
-            $gameProc=$null
-            $deadline=[DateTime]::UtcNow.AddSeconds(180)  # generous timeout for preparation + launch
-            while($gameProc -eq $null -and [DateTime]::UtcNow -lt $deadline) {
-                Start-Sleep -Milliseconds 500
-                # Find dwg2.exe child of our launcher process
-                $candidates=Get-Process -Name 'dwg2' -ErrorAction SilentlyContinue
-                foreach($c in $candidates) {
+        Show-UpdateProgress 'Starting updated launcher...'
+        $ready=$false
+        try {
+            $launcherProc=Start-Process -FilePath $launcher -WorkingDirectory $target -PassThru
+            $gamePath=Join-Path $target 'bin/dwg2.exe'
+            Show-UpdateProgress 'Preparing game and waiting for its window...'
+            $deadline=[DateTime]::UtcNow.AddSeconds(240)
+            do {
+                foreach($game in (Get-Process -Name dwg2 -ErrorAction SilentlyContinue)) {
                     try {
-                        # Check if this dwg2.exe is a descendant of our launcher (same working dir is a good heuristic)
-                        if($c.Path -and $c.Path.StartsWith($target+'\',[StringComparison]::OrdinalIgnoreCase)) {
-                            $gameProc=$c
+                        if($game.Path -eq $gamePath -and $game.MainWindowHandle -ne [IntPtr]::Zero -and !$game.HasExited) {
+                            $ready=$true
                             break
                         }
                     } catch {}
                 }
-                if($gameProc -eq $null) {
-                    # Also check if launcher is still alive
-                    try {$launcherProc.Refresh(); if($launcherProc.HasExited) {break}} catch {}
-                }
-            }
-            if($gameProc) {
-                Show-UpdateProgress 'Game process started. Waiting for window...' 0 0
-                # Wait for the game window to become visible
-                $windowDeadline=[DateTime]::UtcNow.AddSeconds(60)
-                while([DateTime]::UtcNow -lt $windowDeadline) {
-                    Start-Sleep -Milliseconds 300
-                    try {
-                        $gameProc.Refresh()
-                        if($gameProc.MainWindowHandle -ne [IntPtr]::Zero -and !$gameProc.HasExited) {
-                            # Window is created and process is alive
-                            break
-                        }
-                    } catch {}
-                }
-                Show-UpdateProgress 'Game is running. Update complete.' 1 1 'done'
-            } else {
-                Show-UpdateProgress 'Launcher started but game process not detected. Check logs.' 0 0 'failed'
-                Add-Content -Encoding UTF8 -LiteralPath $log -Value 'Update installed; game process not detected within timeout.'
-            }
+                if($ready -or $launcherProc.HasExited) {break}
+                Start-Sleep -Milliseconds 300
+                if($updateForm) {[Windows.Forms.Application]::DoEvents()}
+            } while([DateTime]::UtcNow -lt $deadline)
+        } catch {Add-Content -Encoding UTF8 -LiteralPath $log -Value $_.Exception.Message}
+        if($ready) {
+            Show-UpdateProgress 'Game is running. Update complete.' 1 1 'done'
         } else {
-            Show-UpdateProgress 'Failed to start updated launcher. Check logs.' 0 0 'failed'
-            Add-Content -Encoding UTF8 -LiteralPath $log -Value 'Update installed; Start-Process failed for launcher.'
+            $message='Update installed. The game window did not open. See logs/update-install.log.'
+            Add-Content -Encoding UTF8 -LiteralPath $log -Value $message
+            Show-UpdateProgress $message 0 0 'failed'
+            if($updateForm) {[Windows.Forms.MessageBox]::Show($updateForm,$message,'DWG2 Update') | Out-Null}
         }
-    } else {
-        Show-UpdateProgress 'Launcher updated. Reopening...' 1 1
     }
     if($displayState) {
         if($displayProcess) {[void]$displayProcess.WaitForExit(5000);if($displayProcess.HasExited -and (Test-Path -LiteralPath $displayFile)){Remove-Item -LiteralPath $displayFile -Force}}
