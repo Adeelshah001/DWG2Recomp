@@ -191,7 +191,12 @@ internal sealed class UpdateService : IDisposable {
         var state=new JavaScriptSerializer().DeserializeObject(original) as Dictionary<string,object>;
         string version=state==null?null:StringValue(state,"version");
         if(version==null||VersionNumber(version)<0)throw new InvalidDataException("Invalid update completion version.");
-        ShowInformation("Launcher updated","The launcher was updated to "+version+".\n\nYour game files, saves and settings were kept. Any required game preparation is shown separately.");
+        // Defer the "Launcher updated" notification until after preparation and game launch.
+        // The update progress window (Apply-DownloadedUpdate.ps1) already shows continuous
+        // progress until the game window is visible. Showing another prompt here would be
+        // redundant and appear before preparation completes.
+        // Just log and delete the receipt; the player already saw the update progress.
+        Log("Update completed: "+version);
         if(File.Exists(receipt)&&File.ReadAllText(receipt)==original)File.Delete(receipt);
     }
     void DownloadAndQueue(Release release) {

@@ -127,13 +127,64 @@ try {
             @{version=$releaseState.version;completedUtc=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $receipt -Encoding UTF8
         }
     }} catch {Add-Content -Encoding UTF8 -LiteralPath $log -Value 'Update installed; completion notification could not be recorded.'}
-    Show-UpdateProgress 'Launcher updated. Reopening...' 1 1
+
+    if(!$NoLaunch) {
+        Show-UpdateProgress 'Starting updated launcher...' 0 0
+        # Start the new launcher visibly so we can track it; it will prepare and launch the game.
+        $launcherProc=Start-Process -FilePath $launcher -WorkingDirectory $target -PassThru
+        if($launcherProc) {
+            Show-UpdateProgress 'Launcher started. Preparing game if needed...' 0 0
+            # Wait for the launcher to start the game process (dwg2.exe)
+            $gameProc=$null
+            $deadline=[DateTime]::UtcNow.AddSeconds(180)  # generous timeout for preparation + launch
+            while($gameProc -eq $null -and [DateTime]::UtcNow -lt $deadline) {
+                Start-Sleep -Milliseconds 500
+                # Find dwg2.exe child of our launcher process
+                $candidates=Get-Process -Name 'dwg2' -ErrorAction SilentlyContinue
+                foreach($c in $candidates) {
+                    try {
+                        # Check if this dwg2.exe is a descendant of our launcher (same working dir is a good heuristic)
+                        if($c.Path -and $c.Path.StartsWith($target+'\',[StringComparison]::OrdinalIgnoreCase)) {
+                            $gameProc=$c
+                            break
+                        }
+                    } catch {}
+                }
+                if($gameProc -eq $null) {
+                    # Also check if launcher is still alive
+                    try {$launcherProc.Refresh(); if($launcherProc.HasExited) {break}} catch {}
+                }
+            }
+            if($gameProc) {
+                Show-UpdateProgress 'Game process started. Waiting for window...' 0 0
+                # Wait for the game window to become visible
+                $windowDeadline=[DateTime]::UtcNow.AddSeconds(60)
+                while([DateTime]::UtcNow -lt $windowDeadline) {
+                    Start-Sleep -Milliseconds 300
+                    try {
+                        $gameProc.Refresh()
+                        if($gameProc.MainWindowHandle -ne [IntPtr]::Zero -and !$gameProc.HasExited) {
+                            # Window is created and process is alive
+                            break
+                        }
+                    } catch {}
+                }
+                Show-UpdateProgress 'Game is running. Update complete.' 1 1 'done'
+            } else {
+                Show-UpdateProgress 'Launcher started but game process not detected. Check logs.' 0 0 'failed'
+                Add-Content -Encoding UTF8 -LiteralPath $log -Value 'Update installed; game process not detected within timeout.'
+            }
+        } else {
+            Show-UpdateProgress 'Failed to start updated launcher. Check logs.' 0 0 'failed'
+            Add-Content -Encoding UTF8 -LiteralPath $log -Value 'Update installed; Start-Process failed for launcher.'
+        }
+    } else {
+        Show-UpdateProgress 'Launcher updated. Reopening...' 1 1
+    }
     if($displayState) {
-        Show-UpdateProgress 'Your current installation has been updated.' 1 1 'done'
         if($displayProcess) {[void]$displayProcess.WaitForExit(5000);if($displayProcess.HasExited -and (Test-Path -LiteralPath $displayFile)){Remove-Item -LiteralPath $displayFile -Force}}
     }
     if($updateForm) {$updateForm.Close();$updateForm.Dispose();$script:updateForm=$null}
-    if(!$NoLaunch) {Start-Process -FilePath $launcher -WorkingDirectory $target -WindowStyle Hidden}
 } catch {
     if($displayState) {Show-UpdateProgress 'Update could not finish. See logs/update-install.log.' 0 0 'failed'}
     if($updateForm) {$updateForm.Close();$updateForm.Dispose();$script:updateForm=$null}
