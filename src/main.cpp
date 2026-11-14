@@ -223,6 +223,7 @@ class Dwg2App : public rex::ReXApp {
  protected:
   void OnPostLaunchModule(rex::system::XThread*) override {
     dwg2_menu_memory=runtime()->memory();
+    dwg2_title_graphics=static_cast<rex::graphics::GraphicsSystem*>(runtime()->graphics_system());
     dwg2_title_window.store(window()?static_cast<HWND>(window()->GetNativeWindowHandle()):nullptr);
     auto* dispatcher = runtime()->function_dispatcher();
     if(!dispatcher->GetFunction(0x823EDD90u))throw std::runtime_error("Local generator omitted required guest routine");

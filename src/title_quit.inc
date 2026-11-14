@@ -1,8 +1,11 @@
+#include <rex/graphics/graphics_system.h>
 // Original scene3 is the title frontend. Its model+4192==0 is the Press Start
 // page; model+0/+4/+1836/+1840 guard the original Start/save transitions.
 #include "title_quit_state.h"
 static std::atomic<HWND> dwg2_title_window{nullptr};
 static thread_local dwg2::title::QuitState dwg2_title_quit;
+static thread_local bool dwg2_attract_pending;
+static rex::graphics::GraphicsSystem* dwg2_title_graphics;
 extern "C" void __imp__sub_821771D8(PPCContext&,uint8_t*);
 extern "C" void __imp__sub_821772E8(PPCContext&,uint8_t*);
 extern "C" void __imp__sub_82176938(PPCContext&,uint8_t*);
@@ -74,4 +77,24 @@ extern "C" void sub_821772E8(PPCContext& ctx,uint8_t* base) {__imp__sub_821772E8
 extern "C" void sub_82176938(PPCContext& ctx,uint8_t* base) {
  if(dwg2_title_quit.owner==ctx.r3.u32)dwg2_title_quit={};
  __imp__sub_82176938(ctx,base);
+}
+// The title's attract sequence alternates movie and demo entries.
+extern "C" void __imp__sub_82175270(PPCContext&,uint8_t*);
+extern "C" void sub_82175270(PPCContext& ctx,uint8_t* base) {
+  if (ctx.lr == 0x8217723C) {
+    dwg2_attract_pending=true;
+    REXLOG_INFO("DWG2 attract: starting {} entry {}",(ctx.r4.u32 & 1)?"movie":"demo",ctx.r4.u32);
+  }
+  __imp__sub_82175270(ctx,base);
+}
+
+// Rebuild GPU backing state before the original title setup starts its fade.
+extern "C" void __imp__sub_82175310(PPCContext&,uint8_t*);
+extern "C" void sub_82175310(PPCContext& ctx,uint8_t* base) {
+  if (std::exchange(dwg2_attract_pending,false) && dwg2_title_graphics) {
+    dwg2_title_graphics->InvalidateGpuMemory();
+    dwg2_title_graphics->ClearCaches();
+    REXLOG_INFO("DWG2 title trace: GPU page invalidation and cache refresh queued at title setup");
+  }
+  __imp__sub_82175310(ctx,base);
 }
