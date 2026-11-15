@@ -5,7 +5,7 @@
   <img src="assets/logo.png" alt="Dynasty Warriors: Gundam 2" width="400">
 </p>
 <p align="center">A Windows PC recompilation of Dynasty Warriors: Gundam 2.</p>
-<p align="center"><a href="https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.7-alpha"><strong>Download v07 Alpha</strong></a></p>
+<p align="center"><a href="https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.7.4-alpha"><strong>Download v0.7.4 Alpha</strong></a></p>
 
 ## Features
 
@@ -59,7 +59,7 @@ No game files are included. No separate developer tools or SDK installation is r
 
 ## Quick start
 
-1. Download **DWG2Recomp.zip** from [v07 Alpha](https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.7-alpha).
+1. Download **DWG2Recomp.zip** from [v0.7.4 Alpha](https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.7.4-alpha).
 2. Extract the entire ZIP into a writable folder. Keep its contents together.
 3. Optionally put your supported USA Xbox 360 ISO in the **game** folder, then run **DWG2R.exe**. If no supported ISO is found there, setup asks you to choose it.
 4. Allow the first-time import and preparation to finish. Later launches reuse the prepared game.
@@ -81,6 +81,13 @@ the machine that owns a supported ISO.
 
 Keep your own legally obtained USA ISO outside Git. Do not commit game data, generated
 title code, compiled objects, caches, saves or logs.
+
+## Fork, build, and publish your own updates
+
+1. **Fork and clone.** Select **Fork** on GitHub and clone your fork. Start from `main` for current source or check out the upstream `v0.7.4-alpha` tag to branch from that release.
+2. **Build and test.** Follow [BUILDING.md](BUILDING.md). The launcher builds on Windows without an SDK or game files. For native code changes, use the pinned ReXGlue SDK, the documented toolchain and your own supported USA Xbox 360 dump. Test in a separate installation with a copied save.
+3. **Point the updater at your fork.** Set `UpdateService.Repository` in [launcher/UpdateService.cs](launcher/UpdateService.cs) to `your-account/your-fork`, update the launcher version for your release, and rebuild. Give testers this fork-configured launcher first so **Help > Check for Updates** reads releases from your fork.
+4. **Package and publish.** Use [the player-package build path](BUILDING.md#path-3--player-package) to assemble the portable preparation files. Use the upstream release ZIP as a reference for the layout and update manifest. The full release-packaging workflow is currently maintainer-side, so assembling the capsule alone will not produce an updater-ready ZIP. Publish a GitHub release on your fork with a tag newer than the installed fork build and attach exactly one full player ZIP named `DWG2Recomp.zip` or `DWG2Recomp-<version>-player.zip`. To use the default update channel, leave the GitHub prerelease flag off. Include the corresponding project source and license notices, and keep game files and generated title code out of the package. Test **Help > Check for Updates** from an older fork build before sharing it.
 
 ## Contributing
 
