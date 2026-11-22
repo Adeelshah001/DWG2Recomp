@@ -9,7 +9,45 @@
    const ui::d3d12::D3D12Provider& provider = command_processor_.GetD3D12Provider();
    ID3D12Device* device = provider.GetDevice();
  
-@@ -1557,9 +1559,9 @@
+@@ -1159,6 +1161,8 @@
+                                 D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+ }
+ 
++#include "d3d12_fractional_resolve.inc"
++
+ bool D3D12RenderTargetCache::Resolve(const memory::Memory& memory, D3D12SharedMemory& shared_memory,
+                                      D3D12TextureCache& texture_cache,
+                                      uint32_t& written_address_out, uint32_t& written_length_out) {
+@@ -1173,6 +1177,28 @@
+                                  draw_resolution_scale_y(), fixed_16_truncated_to_minus_1_to_1,
+                                  fixed_16_truncated_to_minus_1_to_1, resolve_info)) {
+     return false;
++  }
++
++  if(dwg2_scene_denominator_==2) {
++    const bool result=Dwg2ResolveFractionalRGBA8(resolve_info,shared_memory,texture_cache,written_address_out,written_length_out);
++    struct TraceSlot{uint64_t sig;uint32_t count;};
++    static std::array<TraceSlot,64> trace_counts{};
++    static size_t trace_count_size=0;
++    const uint64_t signature=uint64_t(resolve_info.color_edram_info.format)|
++      (uint64_t(resolve_info.copy_dest_info.copy_dest_format)<<8)|(uint64_t(resolve_info.color_edram_info.msaa_samples)<<16)|
++      (uint64_t(resolve_info.IsCopyingDepth())<<20)|(uint64_t(resolve_info.IsClearingColor())<<21)|
++      (uint64_t(resolve_info.IsClearingDepth())<<22)|(uint64_t(result)<<23);
++    TraceSlot* found=nullptr;
++    for(size_t i=0;i<trace_count_size;++i){if(trace_counts[i].sig==signature){found=&trace_counts[i];break;}}
++    if(!found&&trace_count_size<trace_counts.size()){found=&trace_counts[trace_count_size++];found->sig=signature;found->count=0;}
++    if(found) {
++      const uint32_t count=++found->count;
++      if(count<=2)REXGPU_INFO("DWG2 fractional resolve: success={} src_format={} dst_format={} msaa={} depth={} color_clear={} depth_clear={} width={} height={} base={} pitch={} x={} y={} count={}",
++        result,uint32_t(resolve_info.color_edram_info.format),uint32_t(resolve_info.copy_dest_info.copy_dest_format),uint32_t(resolve_info.color_edram_info.msaa_samples),
++        resolve_info.IsCopyingDepth(),resolve_info.IsClearingColor(),resolve_info.IsClearingDepth(),resolve_info.coordinate_info.width_div_8*8,resolve_info.height_div_8*8,
++        uint32_t(resolve_info.color_edram_info.base_tiles),uint32_t(resolve_info.color_edram_info.pitch_tiles),resolve_info.coordinate_info.edram_offset_x_div_8*8,resolve_info.coordinate_info.edram_offset_y_div_8*8,count);
++    }
++    return result;
+   }
+ 
+   // Nothing to copy/clear.
+@@ -1557,9 +1583,9 @@
    D3D12_RESOURCE_DESC resource_desc;
    resource_desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
    resource_desc.Alignment = 0;
@@ -21,3 +59,261 @@
    resource_desc.DepthOrArraySize = 1;
    resource_desc.MipLevels = 1;
    if (key.is_depth) {
+@@ -1697,7 +1723,7 @@
+ 
+   return new D3D12RenderTarget(key, resource.Get(), std::move(descriptor_draw),
+                                std::move(descriptor_load_separate), std::move(descriptor_srv),
+-                               std::move(descriptor_srv_stencil), resource_state);
++                               std::move(descriptor_srv_stencil), resource_state,draw_resolution_scale_x(),dwg2_scene_denominator_);
+ }
+ 
+ bool D3D12RenderTargetCache::IsHostDepthEncodingDifferent(
+@@ -2422,7 +2448,9 @@
+   // r0:r2 are involved at least in common addressing code. Texture loads
+   // usually can overwrite some of the addressing temps as they are only needed
+   // for the coordinates for that load. Currently 3 temps are enough.
+-  a.OpDclTemps(3);
++  const bool dwg2_cross_scale=key.dwg2_source_numerator!=0;
++  const bool dwg2_map_coordinates=dwg2_scene_denominator_==2||dwg2_cross_scale;
++  a.OpDclTemps(dwg2_map_coordinates?4:3);
+ 
+   uint32_t draw_resolution_scale_x = this->draw_resolution_scale_x();
+   uint32_t draw_resolution_scale_y = this->draw_resolution_scale_y();
+@@ -2433,7 +2461,13 @@
+   // Split the destination pixel index into 32bpp tile in r0.zw and
+   // 32bpp-tile-relative pixel index in r0.xy.
+   // r0.xy = pixel XY as uint
++  if(dwg2_scene_denominator_==2) {
++    // Convert actual1.5 pixel centers to virtual numerator3 backing coordinates.
++    a.OpMul(dxbc::Dest::R(0,0b0011),dxbc::Src::V1D(kInputRegisterPosition),dxbc::Src::LF(2.f));
++    a.OpFToU(dxbc::Dest::R(0,0b0011),dxbc::Src::R(0));
++  } else {
+   a.OpFToU(dxbc::Dest::R(0, 0b0011), dxbc::Src::V1D(kInputRegisterPosition));
++  }
+   uint32_t dest_tile_width_pixels =
+       tile_width_samples >>
+       (uint32_t(dest_is_64bpp) + uint32_t(key.dest_msaa_samples >= xenos::MsaaSamples::k4X));
+@@ -2805,18 +2839,33 @@
+   if (key.source_msaa_samples != xenos::MsaaSamples::k1X) {
+     for (uint32_t i = 0; i <= uint32_t(source_load_is_two_dwords); ++i) {
+       uint32_t source_load_register = source_load_is_two_dwords ? i : 1;
++      dxbc::Src fractional_coordinates(dxbc::Src::R(1));
++      if(dwg2_map_coordinates) {
++        a.OpMov(dxbc::Dest::R(3),dxbc::Src::R(1));
++        if(dwg2_cross_scale) {
++          // Sample source at destination pixel centers. Fractional virtual
++          // coordinates already encode the doubled center (2*x+1).
++          const uint32_t sn=key.dwg2_source_numerator,sd=key.dwg2_source_fractional?2:1;
++          a.OpUMAd(dxbc::Dest::R(3,0b0011),dxbc::Src::R(1),
++             dxbc::Src::LU(sn*(dwg2_scene_denominator_==2?1:2)),
++             dxbc::Src::LU(dwg2_scene_denominator_==2?0:sn));
++          a.OpUDiv(dxbc::Dest::R(3,0b0011),dxbc::Dest::Null(),dxbc::Src::R(3),
++             dxbc::Src::LU(sd*this->draw_resolution_scale_x()*(dwg2_scene_denominator_==2?1:2)));
++        } else a.OpUShR(dxbc::Dest::R(3,0b0011),dxbc::Src::R(1),dxbc::Src::LU(1));
++        fractional_coordinates=dxbc::Src::R(3);
++      }
+       if (srv_index_depth != UINT32_MAX) {
+-        a.OpLdMS(dxbc::Dest::R(source_load_register, 0b1000), dxbc::Src::R(1), 0b0011,
++        a.OpLdMS(dxbc::Dest::R(source_load_register, 0b1000), fractional_coordinates, 0b0011,
+                  dxbc::Src::T(srv_index_depth, kTransferSRVRegisterDepth, dxbc::Src::kXXXX),
+                  source_sample);
+       }
+       if (srv_index_stencil != UINT32_MAX) {
+-        a.OpLdMS(dxbc::Dest::R(source_load_register, 0b0001), dxbc::Src::R(1), 0b0011,
++        a.OpLdMS(dxbc::Dest::R(source_load_register, 0b0001), fractional_coordinates, 0b0011,
+                  dxbc::Src::T(srv_index_stencil, kTransferSRVRegisterStencil, dxbc::Src::kYYYY),
+                  source_sample);
+       } else if (srv_index_color != UINT32_MAX) {
+         a.OpLdMS(dxbc::Dest::R(source_load_register, source_color_srv_component_mask),
+-                 dxbc::Src::R(1), 0b0011, dxbc::Src::T(srv_index_color, kTransferSRVRegisterColor),
++                 fractional_coordinates, 0b0011, dxbc::Src::T(srv_index_color, kTransferSRVRegisterColor),
+                  source_sample);
+       }
+       if (source_load_is_two_dwords && !i) {
+@@ -2835,16 +2884,31 @@
+     dxbc::Src source_coordinates(dxbc::Src::R(1, 0b10000100));
+     for (uint32_t i = 0; i <= uint32_t(source_load_is_two_dwords); ++i) {
+       uint32_t source_load_register = source_load_is_two_dwords ? i : 1;
++      dxbc::Src fractional_coordinates(dxbc::Src::R(1));
++      if(dwg2_map_coordinates) {
++        a.OpMov(dxbc::Dest::R(3),dxbc::Src::R(1));
++        if(dwg2_cross_scale) {
++          // Sample source at destination pixel centers. Fractional virtual
++          // coordinates already encode the doubled center (2*x+1).
++          const uint32_t sn=key.dwg2_source_numerator,sd=key.dwg2_source_fractional?2:1;
++          a.OpUMAd(dxbc::Dest::R(3,0b0011),dxbc::Src::R(1),
++             dxbc::Src::LU(sn*(dwg2_scene_denominator_==2?1:2)),
++             dxbc::Src::LU(dwg2_scene_denominator_==2?0:sn));
++          a.OpUDiv(dxbc::Dest::R(3,0b0011),dxbc::Dest::Null(),dxbc::Src::R(3),
++             dxbc::Src::LU(sd*this->draw_resolution_scale_x()*(dwg2_scene_denominator_==2?1:2)));
++        } else a.OpUShR(dxbc::Dest::R(3,0b0011),dxbc::Src::R(1),dxbc::Src::LU(1));
++        fractional_coordinates=dxbc::Src::R(3);
++      }
+       if (srv_index_depth != UINT32_MAX) {
+-        a.OpLd(dxbc::Dest::R(source_load_register, 0b1000), source_coordinates, 0b1011,
++        a.OpLd(dxbc::Dest::R(source_load_register, 0b1000), dwg2_map_coordinates?dxbc::Src::R(3,0b10000100):source_coordinates, 0b1011,
+                dxbc::Src::T(srv_index_depth, kTransferSRVRegisterDepth, dxbc::Src::kXXXX));
+       }
+       if (srv_index_stencil != UINT32_MAX) {
+-        a.OpLd(dxbc::Dest::R(source_load_register, 0b0001), source_coordinates, 0b1011,
++        a.OpLd(dxbc::Dest::R(source_load_register, 0b0001), dwg2_map_coordinates?dxbc::Src::R(3,0b10000100):source_coordinates, 0b1011,
+                dxbc::Src::T(srv_index_stencil, kTransferSRVRegisterStencil, dxbc::Src::kYYYY));
+       } else if (srv_index_color != UINT32_MAX) {
+         a.OpLd(dxbc::Dest::R(source_load_register, source_color_srv_component_mask),
+-               source_coordinates, 0b1011,
++               dwg2_map_coordinates?dxbc::Src::R(3,0b10000100):source_coordinates, 0b1011,
+                dxbc::Src::T(srv_index_color, kTransferSRVRegisterColor));
+       }
+       if (source_load_is_two_dwords && !i) {
+@@ -3494,6 +3558,13 @@
+                            tile_height_samples >>
+                            uint32_t(key.host_depth_source_msaa_samples >= xenos::MsaaSamples::k2X)),
+                        dxbc::Src::R(0, dxbc::Src::kZZZZ), dxbc::Src::R(0, dxbc::Src::kYYYY));
++              if(dwg2_map_coordinates) {
++                if(dwg2_cross_scale) {
++                  const uint32_t sn=key.dwg2_source_numerator,sd=key.dwg2_source_fractional?2:1;
++                  a.OpUMAd(dxbc::Dest::R(0,0b0011),dxbc::Src::R(0),dxbc::Src::LU(sn*(dwg2_scene_denominator_==2?1:2)),dxbc::Src::LU(dwg2_scene_denominator_==2?0:sn));
++                  a.OpUDiv(dxbc::Dest::R(0,0b0011),dxbc::Dest::Null(),dxbc::Src::R(0),dxbc::Src::LU(sd*this->draw_resolution_scale_x()*(dwg2_scene_denominator_==2?1:2)));
++                } else a.OpUShR(dxbc::Dest::R(0,0b0011),dxbc::Src::R(0),dxbc::Src::LU(1));
++              }
+               // Load from the host depth texture.
+               if (key.host_depth_source_msaa_samples != xenos::MsaaSamples::k1X) {
+                 a.OpLdMS(dxbc::Dest::R(0, 0b0001), dxbc::Src::R(0), 0b0011,
+@@ -3793,11 +3864,34 @@
+   return pipelines;
+ }
+ 
++bool D3D12RenderTargetCache::Dwg2MigrateSceneFrom(const D3D12RenderTargetCache& old) {
++  // Hardware sample layouts must agree; no reinterpretation of 2x as 4x.
++  if(msaa_2x_supported_!=old.msaa_2x_supported_)return false;
++  std::vector<Dwg2SceneCopy> copies;
++  if(!Dwg2PrepareSceneCopies(old,copies))return false;
++  for(auto& copy:copies) {
++    if(copy.source->key().is_depth) {
++      // Keep the original float32 depth if its guest representation agrees.
++      // Source and secondary host-depth source share the same old profile.
++      for(auto& range:copy.ranges)range.host_depth_source=copy.source;
++      RenderTarget* targets[1]={copy.destination};std::vector<Transfer> ranges[1];ranges[0]=std::move(copy.ranges);
++      PerformTransfersAndResolveClears(1,targets,ranges);
++    } else {
++      RenderTarget* targets[2]={nullptr,copy.destination};std::vector<Transfer> ranges[2];ranges[1]=std::move(copy.ranges);
++      PerformTransfersAndResolveClears(2,targets,ranges);
++    }
++    if(dwg2_transfer_failed_)return false;
++  }
++  // Caller commits only after GPU completion, while both resource graphs live.
++  return true;
++}
++
+ void D3D12RenderTargetCache::PerformTransfersAndResolveClears(
+     uint32_t render_target_count, RenderTarget* const* render_targets,
+     const std::vector<Transfer>* render_target_transfers,
+     const uint64_t* render_target_resolve_clear_values,
+     const Transfer::Rectangle* resolve_clear_rectangle) {
++  dwg2_transfer_failed_=false;
+   assert_true(GetPath() == Path::kHostRenderTargets);
+ 
+   const ui::d3d12::D3D12Provider& provider = command_processor_.GetD3D12Provider();
+@@ -3810,14 +3904,12 @@
+   if (resolve_clear_needed) {
+     // Assuming the rectangle is already clamped by the setup function from the
+     // common render target cache.
+-    clear_rect.left = LONG(resolve_clear_rectangle->x_pixels * draw_resolution_scale_x());
+-    clear_rect.top = LONG(resolve_clear_rectangle->y_pixels * draw_resolution_scale_y());
++    clear_rect.left = Dwg2SceneScaleX().Boundary(resolve_clear_rectangle->x_pixels);
++    clear_rect.top = Dwg2SceneScaleY().Boundary(resolve_clear_rectangle->y_pixels);
+     clear_rect.right =
+-        LONG((resolve_clear_rectangle->x_pixels + resolve_clear_rectangle->width_pixels) *
+-             draw_resolution_scale_x());
++        Dwg2SceneScaleX().Boundary(resolve_clear_rectangle->x_pixels+resolve_clear_rectangle->width_pixels);
+     clear_rect.bottom =
+-        LONG((resolve_clear_rectangle->y_pixels + resolve_clear_rectangle->height_pixels) *
+-             draw_resolution_scale_y());
++        Dwg2SceneScaleY().Boundary(resolve_clear_rectangle->y_pixels+resolve_clear_rectangle->height_pixels);
+   }
+ 
+   // Do host depth storing for the depth destination (assuming there can be only
+@@ -4061,7 +4153,7 @@
+   current_temporary_descriptors_gpu_.resize(descriptor_count);
+   if (!command_processor_.RequestOneUseSingleViewDescriptors(
+           descriptor_count, current_temporary_descriptors_gpu_.data())) {
+-    return;
++    dwg2_transfer_failed_=true;return;
+   }
+   for (uint32_t i = 0; i < descriptor_count; ++i) {
+     device->CopyDescriptorsSimple(1, current_temporary_descriptors_gpu_[i].first,
+@@ -4073,8 +4165,8 @@
+ 
+   bool transfer_viewport_set = false;
+   float pixels_to_ndc_unscaled = 2.0f / float(D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION);
+-  float pixels_to_ndc_x = pixels_to_ndc_unscaled * draw_resolution_scale_x();
+-  float pixels_to_ndc_y = pixels_to_ndc_unscaled * draw_resolution_scale_y();
++  float pixels_to_ndc_x = pixels_to_ndc_unscaled * (float(draw_resolution_scale_x())/float(dwg2_scene_denominator_));
++  float pixels_to_ndc_y = pixels_to_ndc_unscaled * (float(draw_resolution_scale_y())/float(dwg2_scene_denominator_));
+ 
+   TransferRootSignatureIndex last_transfer_root_signature_index =
+       TransferRootSignatureIndex::kCount;
+@@ -4169,6 +4261,9 @@
+           RenderTargetKey source_rt_key = source_d3d12_rt.key();
+           new_transfer_shader_key.source_msaa_samples = source_rt_key.msaa_samples;
+           new_transfer_shader_key.source_resource_format = source_rt_key.resource_format;
++          const bool dwg2_other_scale=source_d3d12_rt.scale_numerator()!=draw_resolution_scale_x()||source_d3d12_rt.scale_denominator()!=dwg2_scene_denominator_;
++          new_transfer_shader_key.dwg2_source_numerator=dwg2_other_scale?source_d3d12_rt.scale_numerator():0;
++          new_transfer_shader_key.dwg2_source_fractional=dwg2_other_scale&&source_d3d12_rt.scale_denominator()==2;
+           bool host_depth_source_is_copy = host_depth_source_d3d12_rt == &dest_d3d12_rt;
+           new_transfer_shader_key.host_depth_source_is_copy = host_depth_source_is_copy;
+           // The host depth copy buffer has only raw samples.
+@@ -4225,15 +4320,13 @@
+             const Transfer::Rectangle& stencil_clear_rectangle =
+                 transfer_stencil_clear_rectangles[j];
+             stencil_clear_rect_write_ptr->left =
+-                LONG(stencil_clear_rectangle.x_pixels * draw_resolution_scale_x());
++                Dwg2SceneScaleX().Boundary(stencil_clear_rectangle.x_pixels);
+             stencil_clear_rect_write_ptr->top =
+-                LONG(stencil_clear_rectangle.y_pixels * draw_resolution_scale_y());
++                Dwg2SceneScaleY().Boundary(stencil_clear_rectangle.y_pixels);
+             stencil_clear_rect_write_ptr->right =
+-                LONG((stencil_clear_rectangle.x_pixels + stencil_clear_rectangle.width_pixels) *
+-                     draw_resolution_scale_x());
++                Dwg2SceneScaleX().Boundary(stencil_clear_rectangle.x_pixels+stencil_clear_rectangle.width_pixels);
+             stencil_clear_rect_write_ptr->bottom =
+-                LONG((stencil_clear_rectangle.y_pixels + stencil_clear_rectangle.height_pixels) *
+-                     draw_resolution_scale_y());
++                Dwg2SceneScaleY().Boundary(stencil_clear_rectangle.y_pixels+stencil_clear_rectangle.height_pixels);
+             ++stencil_clear_rect_write_ptr;
+           }
+         }
+@@ -4331,7 +4424,7 @@
+                 current_submission, transfer_rectangle_buffer_view.SizeInBytes, sizeof(float),
+                 nullptr, nullptr, &transfer_rectangle_buffer_view.BufferLocation));
+         if (!transfer_rectangle_write_ptr) {
+-          continue;
++          dwg2_transfer_failed_=true;continue;
+         }
+         for (auto it_merged = it_merged_first; it_merged <= it_merged_last; ++it_merged) {
+           Transfer::Rectangle transfer_invocation_rectangles[Transfer::kMaxRectanglesWithCutout];
+@@ -4385,7 +4478,7 @@
+         ID3D12PipelineState* const* transfer_pipelines =
+             GetOrCreateTransferPipelines(transfer_shader_key);
+         if (!transfer_pipelines) {
+-          continue;
++          dwg2_transfer_failed_=true;continue;
+         }
+         if (last_transfer_root_signature_index != transfer_root_signature_index) {
+           last_transfer_root_signature_index = transfer_root_signature_index;
+@@ -5284,6 +5377,7 @@
+       // r0.w = sample index within the source pixel
+       a.OpUShR(dxbc::Dest::R(0, 0b0010), dxbc::Src::R(0, dxbc::Src::kYYYY), dxbc::Src::LU(1));
+     }
++    if(dwg2_scene_denominator_==2)a.OpUShR(dxbc::Dest::R(0,0b0011),dxbc::Src::R(0),dxbc::Src::LU(1));
+     // Load the source to r1.
+     // r0.x = X pixel position within the source texture if stencil is needed
+     // r0.y = Y pixel position within the source texture if stencil is needed
+@@ -5311,6 +5405,7 @@
+     // r0.z = sample offset in the EDRAM
+     // r0.w = LOD for the texture load (zero)
+     a.OpMov(dxbc::Dest::R(0, 0b1000), dxbc::Src::LF(0.0f));
++    if(dwg2_scene_denominator_==2)a.OpUShR(dxbc::Dest::R(0,0b0011),dxbc::Src::R(0),dxbc::Src::LU(1));
+     // Load the source to r1.
+     // r0.x = X pixel position within the source texture if stencil is needed
+     // r0.y = Y pixel position within the source texture if stencil is needed

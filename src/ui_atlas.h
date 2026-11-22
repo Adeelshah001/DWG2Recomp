@@ -67,7 +67,15 @@ inline bool PlayStation(std::vector<uint8_t>& rgba,int width,int height,int kind
     return true;
   }
   if(kind==4&&width==1024&&height==512) {
-    Label(rgba,width,{144,207,64,29},"R1");
+    // Native RB source cell starts at148. Fit the entire asymmetric R1 mask,
+    // retaining padding on both sides rather than cropping its64px source.
+    const auto& mask=dwg2::art::Glyph(7);int left=64,top=64,right=0,bottom=0;
+    for(int y=0;y<64;++y)for(int x=0;x<64;++x)if(mask[y*64+x]){left=std::min(left,x);top=std::min(top,y);right=std::max(right,x+1);bottom=std::max(bottom,y+1);}
+    for(int y=0;y<28;++y)for(int x=0;x<44;++x){size_t at=(size_t(207+y)*width+148+x)*4;uint8_t a=0;
+      if(x>=2&&x<42&&y>=2&&y<26){int sx=left+(x-2)*(right-left)/40,sy=top+(y-2)*(bottom-top)/24;a=mask[sy*64+sx];}
+      rgba[at]=rgba[at+1]=rgba[at+2]=245;rgba[at+3]=a;
+    }
+
     Label(rgba,width,{687,170,46,28},"L1");
     return true;
   }

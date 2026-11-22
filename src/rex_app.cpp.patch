@@ -1,0 +1,28 @@
+--- a/src/ui/rex_app.cpp
++++ b/src/ui/rex_app.cpp
+@@ -12,5 +12,15 @@
+ #include <rex/rex_app.h>
+ 
++#include <cstdio>
+ #include <cstdlib>
+ 
++#ifdef _WIN32
++#ifndef WIN32_LEAN_AND_MEAN
++#define WIN32_LEAN_AND_MEAN
++#endif
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#include <windows.h>
++#endif
++
+ #include <rex/assert.h>
+@@ -509,4 +519,8 @@
+   REXLOG_INFO("Title terminated; hard-exiting process.");
+   rex::FlushLogging();
++  std::fflush(nullptr);
++#ifdef _WIN32
++  TerminateProcess(GetCurrentProcess(), 0);
++#endif
+   std::_Exit(0);
+ }

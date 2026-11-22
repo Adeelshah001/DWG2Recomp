@@ -43,8 +43,7 @@ CODEGEN = [
     '-fno-char8_t',
     '-fno-strict-aliasing',
     '-ffp-model=strict',
-    '-march=x86-64-v2',
-    '-msse4.1',
+    '-march=x86-64-v3',
 ]
 # Relative include roots inside the prepared SDK, in the order the shipped
 # host object was compiled with.
@@ -60,7 +59,7 @@ SDK_INCLUDES = [
     'thirdparty/dxc/include',
 ]
 SDK_BUILD_INCLUDES = ['include', 'thirdparty/sdl3/include-revision']
-HOST_SOURCES = ['src/main.cpp']
+HOST_SOURCES = ['src/main.cpp', 'src/hooks_timing_fps.cpp']
 SDK_SOURCES = ['src/ui/rex_app.cpp', 'src/ui/windowed_app_main_sdl.cpp']
 
 

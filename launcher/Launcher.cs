@@ -9,9 +9,30 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 
 internal static class Launcher {
-    internal const string Version = "0.7.4-alpha";
+    internal const string Version = "0.8-alpha";
     internal const string XexHash = "0be3f2e797a31df5d2a231635e4dc5520da36d4b9dbc7b995cf1bd3b0fedb86b";
     internal static readonly string Root = AppDomain.CurrentDomain.BaseDirectory;
+    internal static string ResolvedVersion {
+        get {
+            try {
+                string path = Path.Combine(Root, "maintenance", "release.json");
+                if (!File.Exists(path)) path = Path.Combine(Root, "release.json");
+                if (File.Exists(path)) {
+                    var json = File.ReadAllText(path);
+                    var serializer = new System.Web.Script.Serialization.JavaScriptSerializer();
+                    var obj = serializer.DeserializeObject(json) as Dictionary<string, object>;
+                    if (obj != null) {
+                        object v;
+                        if (obj.TryGetValue("version", out v)) {
+                            string vs = v as string;
+                            if (vs != null && UpdateService.VersionNumber(vs) >= 0) return vs;
+                        }
+                    }
+                }
+            } catch {}
+            return Version;
+        }
+    }
     internal static string Game { get { return Path.Combine(Root, "game-data"); } }
     internal static string FindPackageIso(string root) {
         string folder=Path.Combine(root,"game");if(!Directory.Exists(folder))return null;
@@ -69,11 +90,12 @@ internal static class Launcher {
         string id = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" + Process.GetCurrentProcess().Id;
         int preference = Scale(),n=preference==15?1:preference;
         int width=preference==15?1920:1280*n,height=preference==15?1080:720*n;
+        string logLevel = PlayerSettings.GetString(Root,"logging","level","info");
         return "--game_data_root=" + Quote(Game) + " --user_data_root=" + Quote(Path.Combine(Root,"user-data"))
             + " --cache_root=" + Quote(Path.Combine(Root,"cache"))
             + " --log_file=" + Quote(Path.Combine(Root,"logs","dwg2-"+id+".log"))
-            + " --log_level=info --gpu_plugin=xenos --input_backend=sdl --mnk_mode=true"
-            + " --fullscreen="+(PlayerSettings.Integer(Root,"video","fullscreen",0,0,1)!=0?"true":"false")+" --dwg2_present_fps=0 --dwg2_host_vsync=false --dwg2_skip_startup_logos=true"
+            + " --log_level=" + logLevel + " --gpu_plugin=xenos --input_backend=sdl --mnk_mode=true"
+            + " --fullscreen="+(PlayerSettings.Integer(Root,"video","fullscreen",0,0,1)!=0?"true":"false")+" --dwg2_host_vsync=false --dwg2_skip_startup_logos=true"
             + " --resolution_scale=" + n + " --draw_resolution_scale_x=" + n + " --draw_resolution_scale_y=" + n
             + " --window_width=" + width + " --window_height=" + height;
     }
@@ -143,19 +165,21 @@ internal static class Launcher {
         if (!PortableBuild.Ready()) PortableBuild.Prepare(report,progress);
         foreach (string file in new string[]{"dwg2.exe","rexruntime.dll","rexgpu-xenos.dll","libc++.dll","libunwind.dll","libwinpthread-1.dll"})
             if(!File.Exists(Path.Combine(Root,"bin",file))) throw new FileNotFoundException("Missing runtime file: "+file);
-        File.WriteAllText(Path.Combine(Root,"installed.txt"),Version+"\n"+XexHash+"\n");
+        File.WriteAllText(Path.Combine(Root,"installed.txt"),ResolvedVersion+"\n"+XexHash+"\n");
     }
     [STAThread] private static int Main(string[] args) {
         Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
-        bool dry=false, validate=false, noLaunch=false; string import=null;
+        bool dry=false, validate=false, noLaunch=false, showVersion=false; string import=null;
         try {
             for(int i=0;i<args.Length;i++) {
                 if(args[i]=="--dry-run") dry=true;
                 else if(args[i]=="--validate") validate=true;
                 else if(args[i]=="--no-launch") noLaunch=true;
+                else if(args[i]=="--version") showVersion=true;
                 else if(args[i]=="--import" && i+1<args.Length) import=args[++i];
                 else throw new ArgumentException("Unknown option: "+args[i]);
             }
+            if(showVersion) { Console.WriteLine(ResolvedVersion); return 0; }
             if(dry) { File.WriteAllText(Path.Combine(Root,"launch-preview.txt"),Arguments()); return 0; }
             bool created;
             using(var mutex=new Mutex(true,"Local\\DWG2-Launcher-"+BitConverter.ToString(SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes(Path.GetFullPath(Root).ToLowerInvariant()))).Replace("-",""),out created)) {

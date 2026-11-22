@@ -1,0 +1,44 @@
+--- a/src/graphics/pipeline/shader/dxbc_translator_fetch.cpp
++++ b/src/graphics/pipeline/shader/dxbc_translator_fetch.cpp
+@@ -933,8 +933,8 @@
+                dxbc::Src::LU(uint32_t(1) << tfetch_index));
+       a_.OpIf(true, dxbc::Src::R(system_temp_result_, dxbc::Src::kWWWW));
+       // The texture is resolution-scaled - scale the coordinates and the size.
+-      dxbc::Src resolution_scale_src(dxbc::Src::LF(float(draw_resolution_scale_x_),
+-                                                   float(draw_resolution_scale_y_), 1.0f, 1.0f));
++      dxbc::Src resolution_scale_src(dxbc::Src::LF(Dwg2ScaleX(),
++                                                   Dwg2ScaleY(), 1.0f, 1.0f));
+       if (resolution_scaled_coord_components) {
+         a_.OpMul(dxbc::Dest::R(system_temp_result_, resolution_scaled_coord_components), coord_src,
+                  resolution_scale_src);
+@@ -942,6 +942,10 @@
+       if (resolution_scaled_size_components) {
+         a_.OpMul(dxbc::Dest::R(size_and_is_3d_temp, resolution_scaled_size_components),
+                  dxbc::Src::R(size_and_is_3d_temp), resolution_scale_src);
++        if(dwg2_scale_denominator_==2) {
++          a_.OpRoundNI(dxbc::Dest::R(size_and_is_3d_temp,resolution_scaled_size_components),-dxbc::Src::R(size_and_is_3d_temp));
++          a_.OpMov(dxbc::Dest::R(size_and_is_3d_temp,resolution_scaled_size_components),-dxbc::Src::R(size_and_is_3d_temp));
++        }
+       }
+       a_.OpEndIf();
+     }
+@@ -1043,8 +1047,8 @@
+           a_.OpIf(true, dxbc::Src::R(coord_and_sampler_temp, dxbc::Src::kWWWW));
+           a_.OpAdd(dxbc::Dest::R(coord_and_sampler_temp, normalized_components_with_scaled_offsets),
+                    coord_operand,
+-                   dxbc::Src::LF(offsets[0] / draw_resolution_scale_x_,
+-                                 offsets[1] / draw_resolution_scale_y_, 0.0f, 0.0f));
++                   dxbc::Src::LF(offsets[0] / Dwg2ScaleX(),
++                                 offsets[1] / Dwg2ScaleY(), 0.0f, 0.0f));
+           a_.OpElse();
+           a_.OpAdd(dxbc::Dest::R(coord_and_sampler_temp, normalized_components_with_scaled_offsets),
+                    coord_operand, offsets_src);
+@@ -1103,7 +1107,7 @@
+           a_.OpIf(true, dxbc::Src::R(coord_and_sampler_temp, dxbc::Src::kWWWW));
+           a_.OpMAd(dxbc::Dest::R(coord_and_sampler_temp, normalized_components_with_scaled_offsets),
+                    dxbc::Src::R(coord_and_sampler_temp),
+-                   dxbc::Src::LF(1.0f / draw_resolution_scale_x_, 1.0f / draw_resolution_scale_y_,
++                   dxbc::Src::LF(1.0f / Dwg2ScaleX(), 1.0f / Dwg2ScaleY(),
+                                  1.0f, 1.0f),
+                    coord_operand);
+           a_.OpElse();

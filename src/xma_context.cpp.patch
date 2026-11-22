@@ -56,7 +56,26 @@
    std::lock_guard<std::mutex> lock(lock_);
    assert_true(is_allocated());
  
-@@ -401,23 +410,7 @@
+@@ -309,17 +318,7 @@
+ 
+ uint32_t XmaContext::GetNextPacketReadOffset(uint8_t* buffer, uint32_t next_packet_index,
+                                              uint32_t current_input_packet_count) {
+-  while (next_packet_index < current_input_packet_count) {
+-    uint8_t* next_packet = buffer + (next_packet_index * kBytesPerPacket);
+-    const uint32_t packet_frame_offset = xma::GetPacketFrameOffset(next_packet);
+-
+-    if (packet_frame_offset <= kMaxFrameSizeinBits) {
+-      return (next_packet_index * kBitsPerPacket) + packet_frame_offset;
+-    }
+-    next_packet_index++;
+-  }
+-
+-  return kBitsPerPacketHeader;
++  return dwg2::xma::FindNextPacketReadOffset(buffer, next_packet_index, current_input_packet_count);
+ }
+ 
+ memory::RingBuffer XmaContext::PrepareOutputRingBuffer(XMA_CONTEXT_DATA* data) {
+@@ -401,23 +400,7 @@
                                      const XMA_CONTEXT_DATA& initial_data, uint8_t* context_ptr) {
    XMA_CONTEXT_DATA fresh(context_ptr);
  
@@ -81,7 +100,51 @@
  
    fresh.Store(context_ptr);
  }
-@@ -666,7 +659,9 @@
+@@ -578,28 +561,28 @@
+   uint8_t* packet = current_input_buffer + (packet_index * kBytesPerPacket);
+   const uint32_t packet_first_frame_offset = xma::GetPacketFrameOffset(packet);
+   uint32_t relative_offset = data->input_buffer_read_offset % kBitsPerPacket;
++  const uint8_t skip_count = xma::GetPacketSkipCount(packet);
+ 
+   if (relative_offset < packet_first_frame_offset) {
++    if (!dwg2::xma::HasFrameStart(packet_first_frame_offset)) {
++      const uint32_t next_idx =
++          dwg2::xma::NextPacketIndex(packet_index, skip_count, current_input_packet_count);
++      uint32_t next_input_offset =
++          GetNextPacketReadOffset(current_input_buffer, next_idx, current_input_packet_count);
++      if (next_input_offset == kBitsPerPacketHeader) {
++        SwapInputBuffer(data);
++      } else {
++        data->input_buffer_read_offset = next_input_offset;
++      }
++      return;
++    }
+     data->input_buffer_read_offset = (packet_index * kBitsPerPacket) + packet_first_frame_offset;
+     relative_offset = packet_first_frame_offset;
+   }
+ 
+-  const uint8_t skip_count = xma::GetPacketSkipCount(packet);
+-
+-  // Full packet skip (0xFF) -- no new frames begin in this packet.
+-  if (skip_count == 0xFF) {
+-    uint32_t next_input_offset =
+-        GetNextPacketReadOffset(current_input_buffer, packet_index + 1, current_input_packet_count);
+-    if (next_input_offset == kBitsPerPacketHeader) {
+-      SwapInputBuffer(data);
+-    }
+-    data->input_buffer_read_offset = next_input_offset;
+-    return;
+-  }
+-
+   kPacketInfo packet_info = GetPacketInfo(packet, relative_offset);
+-  const uint32_t packet_to_skip = skip_count + 1;
+-  const uint32_t next_packet_index = packet_index + packet_to_skip;
++  const uint32_t next_packet_index =
++      dwg2::xma::NextPacketIndex(packet_index, skip_count, current_input_packet_count);
+ 
+   // Frame header split across packet boundary.
+   if (packet_info.current_frame_size_ == 0) {
+@@ -666,7 +649,9 @@
      carry_valid_ = false;
    }
    PreparePacket(packet_info.current_frame_size_, padding_start);
@@ -91,3 +154,18 @@
    if (decoded) {
      ConvertFrame(reinterpret_cast<const uint8_t**>(&av_frame_->data), bool(data->is_stereo),
                   decoded_frame_.data());
+@@ -728,10 +713,10 @@
+   if (next_input_offset == kBitsPerPacketHeader) {
+     SwapInputBuffer(data);
+     if (data->IsAnyInputBufferValid()) {
+-      next_input_offset = xma::GetPacketFrameOffset(
+-          memory()->TranslatePhysical(data->GetCurrentInputBufferAddress()));
+-
+-      if (next_input_offset > kMaxFrameSizeinBits) {
++      next_input_offset = GetNextPacketReadOffset(
++          memory()->TranslatePhysical(data->GetCurrentInputBufferAddress()), 0,
++          data->GetCurrentInputBufferPacketCount());
++      if (next_input_offset == kBitsPerPacketHeader) {
+         SwapInputBuffer(data);
+         return;
+       }

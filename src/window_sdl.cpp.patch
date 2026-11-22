@@ -1,16 +1,26 @@
 --- a/src/ui/window_sdl.cpp
 +++ b/src/ui/window_sdl.cpp
-@@ -12,6 +12,9 @@
+@@ -12,6 +12,10 @@
   */
  
  #include <rex/ui/window_sdl.h>
 +#include "window_controls.h"
++#include "window_title.h"
 +extern "C" { __declspec(dllexport) std::atomic<uint32_t> Dwg2PauseRequested{0}; }
 +extern "C" __declspec(dllexport) void Dwg2PausePoint() { dwg2::pause::Point(); }
  
  #include <algorithm>
  #include <cmath>
-@@ -184,6 +187,9 @@
+@@ -144,7 +148,7 @@
+   int initial_width = int(SizeToPhysical(GetDesiredLogicalWidth()));
+   int initial_height = int(SizeToPhysical(GetDesiredLogicalHeight()));
+ #endif
+-  sdl_window_ = SDL_CreateWindow(GetTitle().c_str(), initial_width, initial_height, flags);
++  sdl_window_ = SDL_CreateWindow(dwg2::window_title::Text, initial_width, initial_height, flags);
+   if (!sdl_window_) {
+     REXLOG_ERROR("SDL_CreateWindow failed: {}", SDL_GetError());
+     return false;
+@@ -184,6 +188,9 @@
    ApplyTextInputActiveNow();
    ApplyCursorVisibilityNow();
    SDL_ShowWindow(sdl_window_);
@@ -20,7 +30,7 @@
  
    // Actualize state for the common Window code. Listener dispatch is handled
    // by Window::Open after OpenImpl returns; these only record initial state.
-@@ -206,6 +212,10 @@
+@@ -206,6 +213,10 @@
  }
  
  void WindowSDL::PerformClose() {
@@ -31,7 +41,7 @@
    WindowDestructionReceiver destruction_receiver(this);
    OnBeforeClose(destruction_receiver);
    if (destruction_receiver.IsWindowDestroyed()) {
-@@ -295,6 +305,9 @@
+@@ -295,6 +306,9 @@
    if (!sdl_window_) {
      return;
    }
@@ -41,7 +51,16 @@
    SDL_SetWindowFullscreen(sdl_window_, IsFullscreen());
  }
  
-@@ -474,9 +487,11 @@
+@@ -302,7 +316,7 @@
+   if (!sdl_window_) {
+     return;
+   }
+-  SDL_SetWindowTitle(sdl_window_, GetTitle().c_str());
++  SDL_SetWindowTitle(sdl_window_, dwg2::window_title::Text);
+ }
+ 
+ void WindowSDL::ApplyNewMouseCapture() {
+@@ -474,9 +488,11 @@
        break;
      }
      case SDL_EVENT_WINDOW_FOCUS_GAINED:

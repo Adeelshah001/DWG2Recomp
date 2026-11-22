@@ -5,7 +5,7 @@
 #include <string>
 namespace dwg2::camera {
 inline std::atomic<int> percent{0};
-constexpr bool ValidPercent(int value) { return value>=0&&value<=50&&value%5==0; }
+constexpr bool ValidPercent(int value) { return value>=0&&value<=100&&value%5==0; }
 // Always scale the original perspective angle, never a previously scaled value.
 inline double AdjustedAngle(double radians,int value) {
  constexpr double pi=3.14159265358979323846;

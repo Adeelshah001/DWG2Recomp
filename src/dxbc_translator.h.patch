@@ -1,0 +1,32 @@
+--- a/include/rex/graphics/pipeline/shader/dxbc_translator.h
++++ b/include/rex/graphics/pipeline/shader/dxbc_translator.h
+@@ -50,7 +50,7 @@
+   DxbcShaderTranslator(ui::GraphicsProvider::GpuVendorID vendor_id, bool bindless_resources_used,
+                        bool edram_rov_used, bool gamma_render_target_as_unorm8 = false,
+                        bool msaa_2x_supported = true, uint32_t draw_resolution_scale_x = 1,
+-                       uint32_t draw_resolution_scale_y = 1, bool force_emit_source_map = false);
++                       uint32_t draw_resolution_scale_y = 1, bool force_emit_source_map = false, uint32_t dwg2_scale_denominator = 1);
+   ~DxbcShaderTranslator() override;
+ 
+   // Stage linkage ordering and rules (must be respected not only within the
+@@ -237,8 +237,10 @@
+     // should be safe at least temporarily).
+     kSysFlag_ROVDepthStencilEarlyWrite_Shift,
+ 
++    kSysFlag_Dwg2HalfPixel_Shift,
+     kSysFlag_Count,
+ 
++    kSysFlag_Dwg2HalfPixel = 1u << kSysFlag_Dwg2HalfPixel_Shift,
+     kSysFlag_SharedMemoryIsUAV = 1u << kSysFlag_SharedMemoryIsUAV_Shift,
+     kSysFlag_XYDividedByW = 1u << kSysFlag_XYDividedByW_Shift,
+     kSysFlag_ZDividedByW = 1u << kSysFlag_ZDividedByW_Shift,
+@@ -936,6 +938,9 @@
+   // Guest pixel host width / height.
+   uint32_t draw_resolution_scale_x_;
+   uint32_t draw_resolution_scale_y_;
++  uint32_t dwg2_scale_denominator_;
++  float Dwg2ScaleX() const {return float(draw_resolution_scale_x_)/dwg2_scale_denominator_;}
++  float Dwg2ScaleY() const {return float(draw_resolution_scale_y_)/dwg2_scale_denominator_;}
+ 
+   // Is currently writing the empty depth-only pixel shader, for
+   // CompleteTranslation.

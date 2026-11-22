@@ -1,0 +1,37 @@
+--- a/src/graphics/d3d12/pipeline_cache.cpp
++++ b/src/graphics/d3d12/pipeline_cache.cpp
+@@ -99,7 +99,7 @@
+       provider.GetAdapterVendorID(), bindless_resources_used_, edram_rov_used,
+       !render_target_cache_.gamma_render_target_as_unorm16(),
+       render_target_cache_.msaa_2x_supported(), render_target_cache_.draw_resolution_scale_x(),
+-      render_target_cache_.draw_resolution_scale_y(), provider.GetGraphicsAnalysis() != nullptr);
++      render_target_cache_.draw_resolution_scale_y(), provider.GetGraphicsAnalysis() != nullptr,render_target_cache_.Dwg2SceneScaleX().denominator);
+ 
+   if (edram_rov_used) {
+     depth_only_pixel_shader_ = std::move(shader_translator_->CreateDepthOnlyPixelShader());
+@@ -223,6 +223,7 @@
+   ShutdownShaderStorage();
+ 
+   auto shader_storage_root = cache_root / "shaders";
++  if(render_target_cache_.Dwg2SceneScaleX().denominator!=1)shader_storage_root/= "fractional-3-over-2-v1";
+   // For files that can be moved between different hosts.
+   // Host PSO blobs - if ever added - should be stored in shaders/local/ (they
+   // currently aren't used because because they may be not very practical -
+@@ -374,7 +375,7 @@
+           !render_target_cache_.gamma_render_target_as_unorm16(),
+           render_target_cache_.msaa_2x_supported(), render_target_cache_.draw_resolution_scale_x(),
+           render_target_cache_.draw_resolution_scale_y(),
+-          provider.GetGraphicsAnalysis() != nullptr);
++          provider.GetGraphicsAnalysis() != nullptr,render_target_cache_.Dwg2SceneScaleX().denominator);
+       // If needed and possible, create objects needed for DXIL conversion and
+       // disassembly on this thread.
+       IDxbcConverter* dxbc_converter = nullptr;
+@@ -2886,7 +2887,7 @@
+   state_desc.RasterizerState.SlopeScaledDepthBias =
+       description.depth_bias_slope_scaled *
+       float(std::max(render_target_cache_.draw_resolution_scale_x(),
+-                     render_target_cache_.draw_resolution_scale_y()));
++                     render_target_cache_.draw_resolution_scale_y())) / render_target_cache_.Dwg2SceneScaleX().denominator;
+   state_desc.RasterizerState.DepthClipEnable = description.depth_clip ? TRUE : FALSE;
+   uint32_t msaa_sample_count = uint32_t(1) << uint32_t(description.host_msaa_samples);
+   if (edram_rov_used) {

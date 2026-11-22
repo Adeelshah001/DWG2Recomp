@@ -11,6 +11,12 @@ extern "C" void sub_82386940(PPCContext& ctx,uint8_t* base) {
   __imp__sub_82386940(ctx,base);
 }
 // Guest implementations and mappings are generated from the user's ISO locally.
+#ifdef _WIN32
+extern "C" {
+__declspec(dllexport) unsigned long NvOptimusEnablement = 0x00000001;
+__declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
+}
+#endif
 extern const rex::PPCImageInfo PPCImageConfig;
 extern "C" void sub_821669F8(PPCContext&, uint8_t*);
 extern "C" void sub_82166B38(PPCContext&, uint8_t*);
@@ -54,6 +60,7 @@ extern "C" void sub_823862B8(PPCContext& ctx,uint8_t* base) {
 #include <cfenv>
 #include <array>
 #include <windows.h>
+REXCVAR_DEFINE_BOOL(dwg2_diag_trace, false, "DWG2", "Enable verbose per-frame FOV visibility diagnostics");
 // Observational only: no visibility return, matrix, range, scene pointer, or
 // guest register is changed. Logs remain private and are bounded per thread.
 static void Dwg2VisibilityTrace(const char* stage,unsigned phase,uint32_t data,uint32_t output,uint8_t* base) {
@@ -81,16 +88,19 @@ static void Dwg2VisibilityTrace(const char* stage,unsigned phase,uint32_t data,u
 }
 extern "C" void __imp__sub_82225750(PPCContext&,uint8_t*);
 extern "C" void sub_82225750(PPCContext& ctx,uint8_t* base) {
- Dwg2VisibilityTrace("scene_camera_input",0,ctx.r5.u32,0,base);__imp__sub_82225750(ctx,base);
+ if (REXCVAR_GET(dwg2_diag_trace)) Dwg2VisibilityTrace("scene_camera_input",0,ctx.r5.u32,0,base);
+ __imp__sub_82225750(ctx,base);
 }
 extern "C" void __imp__sub_8222ADB8(PPCContext&,uint8_t*);
 extern "C" void sub_8222ADB8(PPCContext& ctx,uint8_t* base) {
  const uint32_t data=ctx.r4.u32,object=ctx.r3.u32;
- __imp__sub_8222ADB8(ctx,base);Dwg2VisibilityTrace("scene_bounds",1,data,object,base);
+ __imp__sub_8222ADB8(ctx,base);
+ if (REXCVAR_GET(dwg2_diag_trace)) Dwg2VisibilityTrace("scene_bounds",1,data,object,base);
 }
 extern "C" void __imp__sub_82223710(PPCContext&,uint8_t*);
 extern "C" void sub_82223710(PPCContext& ctx,uint8_t* base) {
- Dwg2VisibilityTrace("visibility_matrix_input",2,ctx.r5.u32,0,base);__imp__sub_82223710(ctx,base);
+ if (REXCVAR_GET(dwg2_diag_trace)) Dwg2VisibilityTrace("visibility_matrix_input",2,ctx.r5.u32,0,base);
+ __imp__sub_82223710(ctx,base);
 }
 
 #include "fov_effects.h"
@@ -108,7 +118,7 @@ extern "C" void sub_821244B8(PPCContext& ctx,uint8_t* base) {
     apply=dwg2::camera::EffectsHalfAngle(sample,boost,uint32_t(ctx.lr),ctx.v1.f32[3],adjusted);
     std::fesetenv(&saved);
    }
-   if(apply){Dwg2VisibilityTrace("effects_frustum_corrected",3,data,0,base);ctx.v1.f32[3]=adjusted;}
+   if(apply){if (REXCVAR_GET(dwg2_diag_trace)) Dwg2VisibilityTrace("effects_frustum_corrected",3,data,0,base);ctx.v1.f32[3]=adjusted;}
   }
  }
  __imp__sub_821244B8(ctx,base);
@@ -214,6 +224,10 @@ static void Dwg2BootUpdate(PPCContext& ctx, uint8_t* base) {
     REXLOG_INFO("DWG2 startup: opening movie bypassed through original completion transition");
   }
 }
+namespace dwg2::hooks {
+void RegisterTimingFpsHooks(rex::runtime::FunctionDispatcher*);
+}
+
 class Dwg2App : public rex::ReXApp {
  public:
   using rex::ReXApp::ReXApp;
@@ -253,6 +267,7 @@ class Dwg2App : public rex::ReXApp {
         dispatcher->GetFunction(0x82166B38) != &sub_82166B38 ||
         !dispatcher->SetFunction(0x82166B38, &Dwg2BootUpdate))
       throw std::runtime_error("DWG2 startup hook does not match this game build");
+    dwg2::hooks::RegisterTimingFpsHooks(dispatcher);
   }
 };
 REX_DEFINE_APP(dwg2, Dwg2App::Create)

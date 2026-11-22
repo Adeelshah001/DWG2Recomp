@@ -1,0 +1,29 @@
+--- a/src/graphics/command_processor.cpp
++++ b/src/graphics/command_processor.cpp
+@@ -628,6 +628,12 @@ uint32_t CommandProcessor::ExecutePrimaryBuffer(uint32_t read_index, uint32_t write_index) {
+     }
+   } while (reader.read_count());
+ 
++  // Publish the consumed ring before the backend submits the completed batch.
++  if (read_ptr_writeback_ptr_ && !reader.read_count()) {
++    memory::store_and_swap<uint32_t>(memory_->TranslatePhysical(read_ptr_writeback_ptr_),
++                                     write_index);
++  }
++
+   OnPrimaryBufferEnd();
+ 
+   return write_index;
+@@ -957,6 +963,13 @@ bool CommandProcessor::ExecutePacketType3_XE_SWAP(memory::RingBuffer* reader, ui
+   uint32_t frontbuffer_width = reader->ReadAndSwap<uint32_t>();
+   uint32_t frontbuffer_height = reader->ReadAndSwap<uint32_t>();
+   reader->AdvanceRead((count - 4) * sizeof(uint32_t));
++
++  if (read_ptr_writeback_ptr_ &&
++      reader->buffer() == memory_->TranslatePhysical(primary_buffer_ptr_)) {
++    memory::store_and_swap<uint32_t>(
++        memory_->TranslatePhysical(read_ptr_writeback_ptr_),
++        reader->read_offset() / sizeof(uint32_t));
++  }
+ 
+   IssueSwap(frontbuffer_ptr, frontbuffer_width, frontbuffer_height);
+ 

@@ -16,18 +16,26 @@ inline bool SavePreference(const std::filesystem::path& path,int value) {
 struct EditorState {std::filesystem::path path;HWND slider=nullptr,label=nullptr;};
 inline EditorState editor_state;
 inline void UpdateLabel(EditorState& state,int value) {
- const auto label=value?L"+"+std::to_wstring(value)+L"%":std::wstring(L"Default");SetWindowTextW(state.label,label.c_str());
+ const auto label=value==0?std::wstring(L"Default"):(value==50?std::wstring(L"+50% (Rec.)"):L"+"+std::to_wstring(value)+L"%");
+ SetWindowTextW(state.label,label.c_str());
+}
+inline void SyncEditor(int value) {
+ if(!editor||!IsWindow(editor)||!ValidPercent(value))return;
+ if(editor_state.slider)SendMessageW(editor_state.slider,TBM_SETPOS,TRUE,value/5);
+ if(editor_state.label)UpdateLabel(editor_state,value);
 }
 inline LRESULT CALLBACK EditorProcedure(HWND window,UINT message,WPARAM wp,LPARAM lp) {
  auto* state=reinterpret_cast<EditorState*>(GetWindowLongPtrW(window,GWLP_USERDATA));
  if(message==WM_CREATE) {
   state=static_cast<EditorState*>(reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams);SetWindowLongPtrW(window,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(state));
   auto label=CreateWindowW(L"STATIC",L"Field of view (updates while you play)",WS_CHILD|WS_VISIBLE,20,16,360,22,window,nullptr,nullptr,nullptr);
-  state->label=CreateWindowW(L"STATIC",L"",WS_CHILD|WS_VISIBLE|SS_CENTER,165,46,80,24,window,nullptr,nullptr,nullptr);
+  state->label=CreateWindowW(L"STATIC",L"",WS_CHILD|WS_VISIBLE|SS_CENTER,120,46,160,24,window,nullptr,nullptr,nullptr);
   state->slider=CreateWindowW(TRACKBAR_CLASSW,L"Field of view",WS_CHILD|WS_VISIBLE|WS_TABSTOP|TBS_AUTOTICKS,20,76,360,42,window,reinterpret_cast<HMENU>(1),nullptr,nullptr);
-  SendMessageW(state->slider,TBM_SETRANGE,TRUE,MAKELPARAM(0,10));SendMessageW(state->slider,TBM_SETTICFREQ,1,0);SendMessageW(state->slider,TBM_SETPAGESIZE,0,1);SendMessageW(state->slider,TBM_SETPOS,TRUE,percent.load()/5);
+  SendMessageW(state->slider,TBM_SETRANGE,TRUE,MAKELPARAM(0,20));SendMessageW(state->slider,TBM_SETTICFREQ,1,0);SendMessageW(state->slider,TBM_SETPAGESIZE,0,1);SendMessageW(state->slider,TBM_SETPOS,TRUE,percent.load()/5);
   for(HWND child:{label,state->label,state->slider})SendMessageW(child,WM_SETFONT,reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)),TRUE);
-  CreateWindowW(L"STATIC",L"Default",WS_CHILD|WS_VISIBLE,20,120,85,22,window,nullptr,nullptr,nullptr);CreateWindowW(L"STATIC",L"+50%",WS_CHILD|WS_VISIBLE|SS_RIGHT,300,120,80,22,window,nullptr,nullptr,nullptr);
+  CreateWindowW(L"STATIC",L"Default",WS_CHILD|WS_VISIBLE,20,120,85,22,window,nullptr,nullptr,nullptr);
+  CreateWindowW(L"STATIC",L"+50% (Rec.)",WS_CHILD|WS_VISIBLE|SS_CENTER,150,120,100,22,window,nullptr,nullptr,nullptr);
+  CreateWindowW(L"STATIC",L"+100%",WS_CHILD|WS_VISIBLE|SS_RIGHT,300,120,80,22,window,nullptr,nullptr,nullptr);
   UpdateLabel(*state,percent.load());return 0;
  }
  if(message==WM_HSCROLL&&state&&reinterpret_cast<HWND>(lp)==state->slider) {

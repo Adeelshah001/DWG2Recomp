@@ -14,7 +14,10 @@
  #include <algorithm>
  #include <cstdarg>
  #include <cstring>
-@@ -48,6 +51,7 @@
+@@ -46,8 +49,9 @@
+-REXCVAR_DEFINE_BOOL(d3d12_submit_on_primary_buffer_end, true, "GPU/D3D12",
++REXCVAR_DEFINE_BOOL(d3d12_submit_on_primary_buffer_end, false, "GPU/D3D12",
+                     "Submit command list when PM4 primary buffer ends")
      .lifecycle(rex::cvar::Lifecycle::kHotReload);
  
  namespace rex::graphics::d3d12 {
@@ -93,7 +96,7 @@
    }
    return IssueCopy_ReadbackResolvePath();
  }
-@@ -2893,12 +2906,18 @@
+@@ -2893,15 +2906,22 @@
      return false;
    }
  
@@ -110,11 +113,18 @@
  
    if (!memory_->TranslatePhysical(written_address)) {
 -    return true;
+-  }
+-
+-  bool is_scaled = texture_cache_->IsDrawResolutionScaled();
 +    return !force_full;
-   }
- 
-   bool is_scaled = texture_cache_->IsDrawResolutionScaled();
-@@ -2919,7 +2938,7 @@
++  }
++
++  bool is_scaled = texture_cache_->IsDrawResolutionScaled() &&
++                   !texture_cache_->Dwg2UsesNativeResolveBuffer();
+   uint64_t resolve_key = MakeReadbackResolveKey(written_address, written_length);
+   ReadbackBuffer& rb = readback_buffers_[resolve_key];
+   rb.last_used_frame = frame_current_;
+@@ -2919,7 +2939,7 @@
              &ui::d3d12::util::kHeapPropertiesReadback, provider.GetHeapFlagCreateNotZeroed(),
              &buffer_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&buffer)))) {
        REXGPU_ERROR("Failed to create a {} MB readback buffer", size >> 20);
@@ -123,7 +133,7 @@
      }
      if (rb.buffers[write_index]) {
        if (rb.mapped_data[write_index]) {
-@@ -2938,36 +2957,35 @@
+@@ -2938,36 +2958,35 @@
    }
  
    if (!rb.buffers[write_index]) {
@@ -169,7 +179,7 @@
      }
  
      uint32_t downscale_buffer_size = AlignReadbackBufferSize(written_length);
-@@ -2984,7 +3002,7 @@
+@@ -2984,7 +3003,7 @@
                IID_PPV_ARGS(&buffer)))) {
          REXGPU_ERROR("Failed to create a {} MB resolve downscale buffer",
                       downscale_buffer_size >> 20);
@@ -178,7 +188,7 @@
        }
        if (resolve_downscale_buffer_) {
          resources_for_deletion_.emplace_back(GetCurrentSubmission(),
-@@ -2995,23 +3013,23 @@
+@@ -2995,23 +3014,23 @@
      }
  
      if (!resolve_downscale_buffer_) {
@@ -206,7 +216,7 @@
      }
  
      const ui::d3d12::D3D12Provider& provider = GetD3D12Provider();
-@@ -3069,14 +3087,14 @@
+@@ -3069,14 +3088,14 @@
                                                 written_address, written_length);
    }
  
@@ -223,7 +233,7 @@
    }
  
    bool is_cache_miss = false;
-@@ -3085,16 +3103,18 @@
+@@ -3085,16 +3104,18 @@
      is_cache_miss = true;
      read_index = write_index;
      if (!AwaitAllQueueOperationsCompletion()) {
@@ -246,3 +256,25 @@
      }
    }
  
+@@ -3652,6 +3673,8 @@
+ 
+   // Flags.
+   uint32_t flags = 0;
++  if(render_target_cache_->Dwg2SceneScaleX().denominator==2&&REXCVAR_GET(half_pixel_offset)&&
++     register_file_->Get<reg::PA_SU_VTX_CNTL>().pix_center==xenos::PixelCenter::kD3DZero)flags|=DxbcShaderTranslator::kSysFlag_Dwg2HalfPixel;
+   // Whether shared memory is an SRV or a UAV. Because a resource can't be in a
+   // read-write (UAV) and a read-only (SRV, IBV) state at once, if any shader in
+   // the pipeline uses memexport, the shared memory buffer must be a UAV.
+@@ -3802,10 +3825,10 @@
+     // to radius conversion to avoid multiplying the per-vertex diameter by an
+     // additional constant in the shader.
+     float point_screen_diameter_to_ndc_radius_x =
+-        (/* 0.5f * 2.0f * */ float(draw_resolution_scale_x)) /
++        (/* 0.5f * 2.0f * */ float(draw_resolution_scale_x) / render_target_cache_->Dwg2SceneScaleX().denominator) /
+         std::max(viewport_info.xy_extent[0], uint32_t(1));
+     float point_screen_diameter_to_ndc_radius_y =
+-        (/* 0.5f * 2.0f * */ float(draw_resolution_scale_y)) /
++        (/* 0.5f * 2.0f * */ float(draw_resolution_scale_y) / render_target_cache_->Dwg2SceneScaleY().denominator) /
+         std::max(viewport_info.xy_extent[1], uint32_t(1));
+     dirty |= system_constants_.point_screen_diameter_to_ndc_radius[0] !=
+              point_screen_diameter_to_ndc_radius_x;

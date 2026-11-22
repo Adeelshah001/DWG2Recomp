@@ -49,13 +49,13 @@ static void Dwg2GraphicsWidgets(PPCContext& ctx,uint8_t* base,uint32_t model) {
  const bool active=REX_LOAD_U32(model+1732)==1;const uint32_t color=active?0xFFFFFFFFu:0xFFFFFFA0u;
  Dwg2WidgetText(ctx,base,Dwg2GraphicsQuery(2)>0?"ON":"OFF",704,388,28,color);
  Dwg2WidgetText(ctx,base,Dwg2GraphicsQuery(4)>0?"ON":"OFF",704,476,28,color);
- const int scale=Dwg2GraphicsQuery(0),fov=Dwg2GraphicsQuery(1);if(scale<1||scale>3||fov<0||fov>50)return;
+ const int scale=Dwg2GraphicsQuery(0),fov=Dwg2GraphicsQuery(1);if(scale<1||scale>3||fov<0||fov>100)return;
  char text[80];std::snprintf(text,sizeof(text),"%dx (%d x %dp)",scale,1280*scale,720*scale);
  Dwg2WidgetText(ctx,base,text,704,212,28,color);Dwg2WidgetBar(ctx,base,252,unsigned(scale-1),2,active&&base[model+1737]==0);
  Dwg2WidgetText(ctx,base,"1x",704,265,16,color);Dwg2WidgetText(ctx,base,"2x",869,265,16,color);Dwg2WidgetText(ctx,base,"3x",1030,265,16,color);
  if(fov)std::snprintf(text,sizeof(text),"+%d%%",fov);else std::snprintf(text,sizeof(text),"Default");
- Dwg2WidgetText(ctx,base,text,704,300,28,color);Dwg2WidgetBar(ctx,base,340,unsigned(fov/5),10,active&&base[model+1737]==1);
- Dwg2WidgetText(ctx,base,"Default",704,353,16,color);Dwg2WidgetText(ctx,base,"+50%",1000,353,16,color);
+ Dwg2WidgetText(ctx,base,text,704,300,28,color);Dwg2WidgetBar(ctx,base,340,unsigned(fov/5),20,active&&base[model+1737]==1);
+ Dwg2WidgetText(ctx,base,"Default",704,353,16,color);Dwg2WidgetText(ctx,base,"+50% (Rec.)",845,353,16,color);Dwg2WidgetText(ctx,base,"+100%",988,353,16,color);
 }
 extern "C" void sub_82130188(PPCContext& ctx,uint8_t* base) {
  if(dwg2_graphics_render_model&&ctx.r4.s32==488&&ctx.r5.s32==162){const uint32_t alpha=REX_LOAD_U32(dwg2_graphics_render_model+1732)==1?255:160;Dwg2WidgetText(ctx,base,"Settings",488,162,32,0xFFFFFF00u|alpha);return;}

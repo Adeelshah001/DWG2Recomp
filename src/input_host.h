@@ -12,9 +12,12 @@
 extern "C" int Dwg2NotifyInputActivity(int family,int controller);
 
 namespace dwg2::input {
-inline std::filesystem::path Root() {
- wchar_t exe[32768]{};GetModuleFileNameW(nullptr,exe,32768);
- return std::filesystem::path(exe).parent_path().parent_path();
+inline const std::filesystem::path& Root() {
+ static const std::filesystem::path cached=[]{
+  wchar_t exe[32768]{};GetModuleFileNameW(nullptr,exe,32768);
+  return std::filesystem::path(exe).parent_path().parent_path();
+ }();
+ return cached;
 }
 inline int Family(SDL_Gamepad* pad) {
  auto type=SDL_GetGamepadType(pad);

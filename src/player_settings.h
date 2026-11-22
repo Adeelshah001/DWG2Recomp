@@ -12,7 +12,7 @@
 namespace dwg2::settings {
 inline std::string Trim(std::string s) {auto a=s.find_first_not_of(" \t\r");if(a==s.npos)return {};return s.substr(a,s.find_last_not_of(" \t\r")-a+1);}
 inline std::string Lower(std::string s){for(auto&c:s)if(c>='A'&&c<='Z')c+=32;return s;}
-inline std::filesystem::path Path(){wchar_t exe[32768]{};GetModuleFileNameW(nullptr,exe,32768);return std::filesystem::path(exe).parent_path().parent_path()/L"settings.ini";}
+inline const std::filesystem::path& Path(){static const std::filesystem::path cached=[]{wchar_t exe[32768]{};GetModuleFileNameW(nullptr,exe,32768);return std::filesystem::path(exe).parent_path().parent_path()/L"settings.ini";}();return cached;}
 struct Document {
  std::vector<std::string> lines;std::map<std::string,std::string> values;
  bool Parse(const std::string& text){lines.clear();values.clear();if(text.size()>1024*1024)return false;std::istringstream in(text);std::string line,section;bool first=true;

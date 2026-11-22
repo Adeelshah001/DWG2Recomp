@@ -1,0 +1,41 @@
+--- a/include/rex/graphics/pipeline/render_target/cache.h
++++ b/include/rex/graphics/pipeline/render_target/cache.h
+@@ -487,6 +487,38 @@
+   // false).
+   virtual bool IsHostDepthEncodingDifferent(xenos::DepthRenderTargetFormat format) const = 0;
+ 
++  // Prepare all currently referenced scene owners before retiring an old cache.
++  struct Dwg2SceneCopy {
++    RenderTarget* source;
++    RenderTarget* destination;
++    std::vector<Transfer> ranges;
++  };
++  bool Dwg2PrepareSceneCopies(const RenderTargetCache& old,std::vector<Dwg2SceneCopy>& copies) {
++    if(GetPath()!=Path::kHostRenderTargets||old.GetPath()!=Path::kHostRenderTargets)return false;
++    std::unordered_map<RenderTargetKey,size_t,RenderTargetKey::Hasher> indices;
++    auto add=[&](RenderTargetKey key,uint32_t begin,uint32_t end) {
++      if(key.IsEmpty())return true;
++      auto source=old.render_targets_.find(key);
++      if(source==old.render_targets_.end()||!source->second)return false;
++      auto found=indices.find(key);
++      size_t index;
++      if(found==indices.end()) {
++        auto* destination=GetOrCreateRenderTarget(key);if(!destination)return false;
++        index=copies.size();indices.emplace(key,index);copies.push_back({source->second,destination,{}});
++      } else index=found->second;
++      for(const auto& existing:copies[index].ranges)
++        if(existing.start_tiles==begin&&existing.end_tiles==end)return true;
++      copies[index].ranges.emplace_back(begin,end,source->second,nullptr);return true;
++    };
++    for(const auto& item:old.ownership_ranges_) {
++      if(!add(item.second.render_target,item.first,item.second.end_tiles)||
++         !add(item.second.host_depth_render_target_unorm24,item.first,item.second.end_tiles)||
++         !add(item.second.host_depth_render_target_float24,item.first,item.second.end_tiles))return false;
++    }
++    return true;
++  }
++  void Dwg2CommitSceneOwnership(const RenderTargetCache& old) {ownership_ranges_=old.ownership_ranges_;}
++
+   void ResetAccumulatedRenderTargets() { are_accumulated_render_targets_valid_ = false; }
+   RenderTarget* const* last_update_accumulated_render_targets() const {
+     assert_true(GetPath() == Path::kHostRenderTargets);

@@ -15,7 +15,7 @@
 +  friend struct Dwg2HostTest;
 +  void Dwg2RememberResolve(uint32_t address,uint32_t length);
 +  bool Dwg2ReadbackResolvedRange(uint32_t written_address,uint32_t written_length,uint32_t format,bool force_full);
-+  bool Dwg2ChangeResolution(uint32_t scale);
++  bool Dwg2ChangeResolution(uint32_t scale,uint32_t denominator=1);
 +  void Dwg2ApplyResolutionRequest();
    bool IssueCopy_ReadbackResolvePath();
    bool IssueDraw_MemexportReadbackFullPath(uint32_t total_size);

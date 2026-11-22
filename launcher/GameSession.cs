@@ -12,7 +12,7 @@ internal static class GameSession {
         using(var updates=new UpdateService(Launcher.Root))
         using(var restart=new EventWaitHandle(false,EventResetMode.ManualReset,name)) {
             info.EnvironmentVariables[RestartVariable]=name;
-            info.EnvironmentVariables["DWG2_RELEASE_VERSION"]=Launcher.Version;
+            info.EnvironmentVariables["DWG2_RELEASE_VERSION"]=Launcher.ResolvedVersion;
             info.EnvironmentVariables[UpdateService.EventVariable]=updates.EventName;
             info.EnvironmentVariables[UpdateService.ModalVariable]=updates.ModalName;
             info.EnvironmentVariables["DWG2_LAUNCHER_PID"]=Process.GetCurrentProcess().Id.ToString();

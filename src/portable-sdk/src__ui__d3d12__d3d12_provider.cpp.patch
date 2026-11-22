@@ -1,11 +1,92 @@
 --- a/src/ui/d3d12/d3d12_provider.cpp
 +++ b/src/ui/d3d12/d3d12_provider.cpp
-@@ -256,7 +256,7 @@
-   while (dxgi_factory->EnumAdapters1(adapter_index, &adapter) == S_OK) {
-     DXGI_ADAPTER_DESC1 adapter_desc;
-     if (SUCCEEDED(adapter->GetDesc1(&adapter_desc))) {
+@@ -253,27 +253,68 @@
+   // Choose the adapter.
+   uint32_t adapter_index = 0;
+   IDXGIAdapter1* adapter = nullptr;
+-  while (dxgi_factory->EnumAdapters1(adapter_index, &adapter) == S_OK) {
+-    DXGI_ADAPTER_DESC1 adapter_desc;
+-    if (SUCCEEDED(adapter->GetDesc1(&adapter_desc))) {
 -      if (SUCCEEDED(pfn_d3d12_create_device_(adapter, D3D_FEATURE_LEVEL_11_0, _uuidof(ID3D12Device),
-+      if (SUCCEEDED(pfn_d3d12_create_device_(adapter, D3D_FEATURE_LEVEL_11_0, __uuidof(ID3D12Device),
-                                              nullptr))) {
-         if (REXCVAR_GET(d3d12_adapter) >= 0) {
-           if (adapter_index == REXCVAR_GET(d3d12_adapter)) {
+-                                             nullptr))) {
+-        if (REXCVAR_GET(d3d12_adapter) >= 0) {
+-          if (adapter_index == REXCVAR_GET(d3d12_adapter)) {
+-            break;
++  const int32_t d3d12_adapter_cvar = REXCVAR_GET(d3d12_adapter);
++  if (d3d12_adapter_cvar >= 0 || d3d12_adapter_cvar == -2) {
++    while (dxgi_factory->EnumAdapters1(adapter_index, &adapter) == S_OK) {
++      DXGI_ADAPTER_DESC1 adapter_desc;
++      if (SUCCEEDED(adapter->GetDesc1(&adapter_desc))) {
++        if (SUCCEEDED(pfn_d3d12_create_device_(adapter, D3D_FEATURE_LEVEL_11_0,
++                                               __uuidof(ID3D12Device), nullptr))) {
++          if (d3d12_adapter_cvar >= 0) {
++            if (adapter_index == static_cast<uint32_t>(d3d12_adapter_cvar)) {
++              break;
++            }
++          } else if (adapter_desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
++            break;
+           }
+-        } else if (REXCVAR_GET(d3d12_adapter) == -2) {
+-          if (adapter_desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
+-            break;
+-          }
+-        } else {
+-          if (!(adapter_desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)) {
+-            break;
+-          }
+         }
+       }
++      adapter->Release();
++      adapter = nullptr;
++      ++adapter_index;
++    }
++  } else {
++    IDXGIFactory6* dxgi_factory6 = nullptr;
++    if (FAILED(dxgi_factory->QueryInterface(IID_PPV_ARGS(&dxgi_factory6)))) {
++      dxgi_factory6 = nullptr;
++    }
++    SIZE_T best_vram = 0;
++    IDXGIAdapter1* candidate = nullptr;
++    auto next_adapter = [&]() -> HRESULT {
++      return dxgi_factory6
++                 ? dxgi_factory6->EnumAdapterByGpuPreference(
++                       adapter_index, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
++                       IID_PPV_ARGS(&candidate))
++                 : dxgi_factory->EnumAdapters1(adapter_index, &candidate);
++    };
++    while (next_adapter() == S_OK) {
++      DXGI_ADAPTER_DESC1 candidate_desc;
++      if (SUCCEEDED(candidate->GetDesc1(&candidate_desc)) &&
++          !(candidate_desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) &&
++          SUCCEEDED(pfn_d3d12_create_device_(candidate, D3D_FEATURE_LEVEL_11_0,
++                                               __uuidof(ID3D12Device), nullptr))) {
++        char candidate_name[513] = {};
++        const bool converted =
++            WideCharToMultiByte(CP_UTF8, 0, candidate_desc.Description, -1, candidate_name,
++                                sizeof(candidate_name), nullptr, nullptr) != 0;
++        REXGPU_INFO(
++            "DXGI adapter candidate [{}]: {} (vendor 0x{:04X}, device 0x{:04X}, vram={} MiB)",
++            adapter_index, converted ? candidate_name : "(unknown)", candidate_desc.VendorId,
++            candidate_desc.DeviceId, candidate_desc.DedicatedVideoMemory >> 20);
++        if (!adapter || candidate_desc.DedicatedVideoMemory > best_vram) {
++          if (adapter) {
++            adapter->Release();
++          }
++          adapter = candidate;
++          best_vram = candidate_desc.DedicatedVideoMemory;
++          candidate = nullptr;
++        }
++      }
++      if (candidate) {
++        candidate->Release();
++        candidate = nullptr;
++      }
++      ++adapter_index;
++    }
++    if (dxgi_factory6) {
++      dxgi_factory6->Release();
+     }
+-    adapter->Release();
+-    adapter = nullptr;
+-    ++adapter_index;
+   }

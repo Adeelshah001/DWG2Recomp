@@ -8,7 +8,7 @@
  #include <rex/graphics/d3d12/shared_memory.h>
  #include <rex/graphics/d3d12/texture_cache.h>
  #include <rex/graphics/flags.h>
-@@ -42,12 +43,18 @@
+@@ -42,12 +43,20 @@
   public:
    D3D12RenderTargetCache(const RegisterFile& register_file, const memory::Memory& memory,
                           uint32_t draw_resolution_scale_x, uint32_t draw_resolution_scale_y,
@@ -16,25 +16,69 @@
 +                         D3D12CommandProcessor& command_processor, bool bindless_resources_used,
 +                         uint32_t dwg2_scene_denominator=1)
        : RenderTargetCache(register_file, memory, draw_resolution_scale_x, draw_resolution_scale_y),
++        dwg2_scene_denominator_(dwg2_scene_denominator),
          command_processor_(command_processor),
--        bindless_resources_used_(bindless_resources_used) {}
-+        bindless_resources_used_(bindless_resources_used),
-+        dwg2_scene_denominator_(dwg2_scene_denominator) {}
+         bindless_resources_used_(bindless_resources_used) {}
    ~D3D12RenderTargetCache() override;
  
 +  // Denominator 2 is a scene-rendering probe, not a complete live resolve path.
 +  // The player menu must not request it until texture/EDRAM aliasing is qualified.
 +  dwg2::RenderScale Dwg2SceneScaleX() const {return {draw_resolution_scale_x(),dwg2_scene_denominator_};}
 +  dwg2::RenderScale Dwg2SceneScaleY() const {return {draw_resolution_scale_y(),dwg2_scene_denominator_};}
++  bool Dwg2MigrateSceneFrom(const D3D12RenderTargetCache& old);
++  void Dwg2CommitMigratedScene(const D3D12RenderTargetCache& old) {Dwg2CommitSceneOwnership(old);}
    bool Initialize();
    void Shutdown(bool from_destructor = false);
  
-@@ -119,6 +126,8 @@
+@@ -119,6 +128,12 @@
    void RequestPixelShaderInterlockBarrier() override;
  
   private:
 +  friend struct Dwg2HostTest;
 +  const uint32_t dwg2_scene_denominator_;
++  bool dwg2_transfer_failed_=false;
++  bool Dwg2ResolveFractionalDepth24(const draw_util::ResolveInfo& info,D3D12SharedMemory& shared,D3D12TextureCache& textures,uint32_t& address,uint32_t& length);
++  bool Dwg2ResolveFractionalRGBA8(const draw_util::ResolveInfo& info,D3D12SharedMemory& shared,
++    D3D12TextureCache& textures,uint32_t& written_address,uint32_t& written_length);
    enum class EdramBufferModificationStatus {
      // The values are ordered by how strong the barrier conditions are.
      // No uncommitted ROV/UAV writes.
+@@ -202,8 +217,9 @@
+                       ui::d3d12::D3D12CpuDescriptorPool::Descriptor&& descriptor_load_separate,
+                       ui::d3d12::D3D12CpuDescriptorPool::Descriptor&& descriptor_srv,
+                       ui::d3d12::D3D12CpuDescriptorPool::Descriptor&& descriptor_srv_stencil,
+-                      D3D12_RESOURCE_STATES resource_state)
++                      D3D12_RESOURCE_STATES resource_state, uint32_t scale_numerator, uint32_t scale_denominator)
+         : RenderTarget(key),
++          scale_numerator_(scale_numerator),scale_denominator_(scale_denominator),
+           resource_(resource),
+           descriptor_draw_(std::move(descriptor_draw)),
+           descriptor_load_separate_(std::move(descriptor_load_separate)),
+@@ -211,6 +227,8 @@
+           descriptor_srv_stencil_(std::move(descriptor_srv_stencil)),
+           resource_state_(resource_state) {}
+ 
++    uint32_t scale_numerator() const { return scale_numerator_; }
++    uint32_t scale_denominator() const { return scale_denominator_; }
+     ID3D12Resource* resource() const { return resource_.Get(); }
+     const ui::d3d12::D3D12CpuDescriptorPool::Descriptor& descriptor_draw() const {
+       return descriptor_draw_;
+@@ -243,6 +261,7 @@
+     void SetTemporarySortIndex(uint32_t index) { temporary_sort_index_ = index; }
+ 
+    private:
++    const uint32_t scale_numerator_,scale_denominator_;
+     Microsoft::WRL::ComPtr<ID3D12Resource> resource_;
+     ui::d3d12::D3D12CpuDescriptorPool::Descriptor descriptor_draw_;
+     ui::d3d12::D3D12CpuDescriptorPool::Descriptor descriptor_load_separate_;
+@@ -377,6 +396,10 @@
+       // swapping of 40-sample columns as opposed to the host render target -
+       // this is done only for the color source).
+       uint32_t host_depth_source_is_copy : 1;
++
++      // Nonzero only for scene migration from another scale.
++      uint32_t dwg2_source_numerator : 2;
++      uint32_t dwg2_source_fractional : 1;
+ 
+       // Last bits because this affects the root signature - after sorting, only
+       // change it as fewer times as possible. Depth buffers have an additional

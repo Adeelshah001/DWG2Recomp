@@ -75,7 +75,7 @@ static void Dwg2GraphicsAdjust(uint32_t model,uint8_t* base,int delta) {
  const int key=row==3?4:int(row),current=Dwg2GraphicsQuery(key);if(current<0)return;
  int next=current;
  if(row==0){if(Dwg2GraphicsQuery(3)>0)return;next=std::max(1,std::min(3,current+delta));}
- else if(row==1)next=std::max(0,std::min(50,current+delta*5));
+ else if(row==1)next=std::max(0,std::min(100,current+delta*5));
  else next=current?0:1;
  if(next!=current)Dwg2GraphicsChange(key,next);
 }

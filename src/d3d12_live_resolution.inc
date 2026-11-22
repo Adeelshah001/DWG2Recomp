@@ -14,10 +14,11 @@ void D3D12CommandProcessor::Dwg2RememberResolve(uint32_t address,uint32_t length
  if(length)Dwg2Info(this).ranges.Remember(address,length,
      static_cast<uint32_t>(register_file_->Get<reg::RB_COPY_DEST_INFO>().copy_dest_format));
 }
-bool D3D12CommandProcessor::Dwg2ChangeResolution(uint32_t scale) {
- const dwg2::RenderScale profile{scale,1};
+bool D3D12CommandProcessor::Dwg2ChangeResolution(uint32_t scale,uint32_t denominator) {
+ const dwg2::RenderScale profile{scale,denominator};
  if(!profile.SupportedProfile() || !texture_cache_ || !render_target_cache_)return false;
- if(texture_cache_->draw_resolution_scale_x()==scale && texture_cache_->draw_resolution_scale_y()==scale)return true;
+ if(texture_cache_->draw_resolution_scale_x()==scale && texture_cache_->draw_resolution_scale_y()==scale &&
+    texture_cache_->Dwg2UsesNativeResolveBuffer()==(denominator==2))return true;
  uint32_t sx=scale,sy=scale;
  if(!D3D12TextureCache::ClampDrawResolutionScaleToMaxSupported(sx,sy,GetD3D12Provider()) || sx!=scale || sy!=scale)return false;
  if(!AwaitAllQueueOperationsCompletion())return false;
@@ -39,7 +40,8 @@ bool D3D12CommandProcessor::Dwg2ChangeResolution(uint32_t scale) {
   }
   bool migrated=true;
   for(const auto& range:plan) {
-   if(!BeginSubmission(true) || !texture_cache_->MakeScaledResolveRangeCurrent(range.address,range.length) ||
+   if(!BeginSubmission(true) || (!texture_cache_->Dwg2UsesNativeResolveBuffer() &&
+       !texture_cache_->MakeScaledResolveRangeCurrent(range.address,range.length)) ||
       !Dwg2ReadbackResolvedRange(range.address,range.length,range.format,true)){migrated=false;break;}
   }
   if(frame_open_ && !EndSubmission(true))migrated=false;
@@ -47,19 +49,31 @@ bool D3D12CommandProcessor::Dwg2ChangeResolution(uint32_t scale) {
  }
  // Allocate replacements before retiring old resources. Failure keeps the old
  // resource graph usable. Guest CPU state, registers and shared GPU memory stay.
- auto targets=std::make_unique<D3D12RenderTargetCache>(*register_file_,*memory_,scale,scale,*this,bindless_resources_used_);
- if(!targets->Initialize() || targets->GetPath()!=render_target_cache_->GetPath())return false;
- auto textures=D3D12TextureCache::Create(*register_file_,*shared_memory_,scale,scale,*this,bindless_resources_used_);
+ auto targets=std::make_unique<D3D12RenderTargetCache>(*register_file_,*memory_,scale,scale,*this,bindless_resources_used_,denominator);
+ if(!targets->Initialize() || targets->GetPath()!=render_target_cache_->GetPath() ||
+    (denominator==2&&targets->GetPath()!=RenderTargetCache::Path::kHostRenderTargets))return false;
+ auto textures=D3D12TextureCache::Create(*register_file_,*shared_memory_,scale,scale,*this,bindless_resources_used_,denominator);
  if(!textures)return false;
  auto pipelines=std::make_unique<PipelineCache>(*this,*register_file_,*targets,bindless_resources_used_);
  if(!pipelines->Initialize())return false;
- if(!state.cache_root.empty())pipelines->InitializeShaderStorage(state.cache_root/ ("resolution-"+std::to_string(scale)),state.title,true);
+ if(!state.cache_root.empty())pipelines->InitializeShaderStorage(state.cache_root/ ("resolution-"+std::to_string(scale)+(denominator==1?std::string():"-over-"+std::to_string(denominator))),state.title,true);
  auto reload=[&](Shader* shader)->Shader* {
   if(!shader)return nullptr;
   auto code=shader->ucode_data();for(auto& word:code)word=rex::byte_swap(word);
   return pipelines->LoadShader(shader->type(),code.data(),static_cast<uint32_t>(code.size()));
  };
  auto* vertex=reload(active_vertex_shader_);auto* pixel=reload(active_pixel_shader_);
+ if((active_vertex_shader_&&!vertex)||(active_pixel_shader_&&!pixel))return false;
+ // Preserve owned scene surfaces before swapping the resource graph. Both old
+ // and new caches remain alive until the submitted transfers have completed.
+ bool scene_migrated=BeginSubmission(true);
+ if(scene_migrated)scene_migrated=targets->Dwg2MigrateSceneFrom(*render_target_cache_);
+ if(frame_open_&&!EndSubmission(true))scene_migrated=false;
+ if(!AwaitAllQueueOperationsCompletion())scene_migrated=false;
+ current_guest_pipeline_=nullptr;current_external_pipeline_=nullptr;current_graphics_root_signature_=nullptr;
+ viewport_cache_valid_=false;render_target_cache_->InvalidateCommandListRenderTargets();
+ if(!scene_migrated)return false;
+ targets->Dwg2CommitMigratedScene(*render_target_cache_);
  auto old_pipelines=std::move(pipeline_cache_);auto old_textures=std::move(texture_cache_);auto old_targets=std::move(render_target_cache_);
  pipeline_cache_=std::move(pipelines);texture_cache_=std::move(textures);render_target_cache_=std::move(targets);
  active_vertex_shader_=vertex;active_pixel_shader_=pixel;
@@ -81,7 +95,7 @@ bool D3D12CommandProcessor::Dwg2ChangeResolution(uint32_t scale) {
  viewport_cache_valid_=false;
  InvalidateAllVertexBufferResidency();primitive_processor_->ClearCache();
  state.ranges.Clear();
- REXGPU_INFO("DWG2 live resolution applied: {}x, {}x{} internal/output target; frame resources rebuilt without restarting the title.",scale,profile.ResourceExtent(1280),profile.ResourceExtent(720));
+ REXGPU_INFO("DWG2 live resolution applied: {}/{}, {}x{} internal/output target; frame resources rebuilt without restarting the title.",scale,denominator,profile.ResourceExtent(1280),profile.ResourceExtent(720));
  return true;
 }
 void D3D12CommandProcessor::Dwg2ApplyResolutionRequest() {
@@ -91,7 +105,8 @@ void D3D12CommandProcessor::Dwg2ApplyResolutionRequest() {
  static auto complete=reinterpret_cast<Complete>(GetProcAddress(runtime,"Dwg2CompleteResolution"));
  if(!take || !complete)return;
  int requested=take();if(!requested)return;
- const bool success=Dwg2ChangeResolution(static_cast<uint32_t>(requested));
+ const bool valid=requested==15||(requested>=1&&requested<=3);
+ const bool success=valid&&Dwg2ChangeResolution(requested==15?3:static_cast<uint32_t>(requested),requested==15?2:1);
  complete(requested,success?0:1);
  if(!success)REXGPU_WARN("DWG2 live resolution rejected; old scale retained: request {}",requested);
 }

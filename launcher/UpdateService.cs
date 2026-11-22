@@ -33,6 +33,27 @@ internal sealed class UpdateService : IDisposable {
     Process game;
     internal bool InstallationQueued { get { return queued; } }
     internal void SetGame(Process value) {lock(gameGate)game=value;}
+    internal static string ResolvedVersion {
+        get {
+            try {
+                string path = Path.Combine(Launcher.Root, "maintenance", "release.json");
+                if (!File.Exists(path)) path = Path.Combine(Launcher.Root, "release.json");
+                if (File.Exists(path)) {
+                    var json = File.ReadAllText(path);
+                    var serializer = new System.Web.Script.Serialization.JavaScriptSerializer();
+                    var obj = serializer.DeserializeObject(json) as Dictionary<string, object>;
+                    if (obj != null) {
+                        object v;
+                        if (obj.TryGetValue("version", out v)) {
+                            string vs = v as string;
+                            if (vs != null && VersionNumber(vs) >= 0) return vs;
+                        }
+                    }
+                }
+            } catch {}
+            return "0.8-alpha";
+        }
+    }
     [DllImport("user32.dll",SetLastError=true)]static extern bool PostMessage(IntPtr window,uint message,IntPtr w,IntPtr l);
     internal static bool RequestNormalClose(Process process) {
         if(process==null)return true;
@@ -41,7 +62,7 @@ internal sealed class UpdateService : IDisposable {
         } catch(InvalidOperationException){return true;}
     }
     internal static bool PostNormalClose(IntPtr window) {return window!=IntPtr.Zero&&PostMessage(window,0x0010,IntPtr.Zero,IntPtr.Zero);}
-    internal static string InstallPromptText="The update is ready. Close the game and launcher to install it now?\n\nSave your progress before choosing Yes. No keeps playing and installs after you quit. The updated launcher will reopen automatically.";
+    internal static string InstallPromptText="The update is ready. Close the game and launcher to install it now?\n\nSave your progress before choosing Yes. No keeps playing and installs after you quit. The game will launch automatically after installation completes.";
     internal bool CloseForInstall() {lock(gameGate)return RequestNormalClose(game);}
 
     internal readonly string EventName="Local\\DWG2-Update-"+Guid.NewGuid().ToString("N");
@@ -105,7 +126,7 @@ internal sealed class UpdateService : IDisposable {
     static HttpWebResponse Open(string url,int timeout) {
         for(int redirects=0;redirects<=5;++redirects) {
             if(!AllowedUrl(url))throw new InvalidDataException("Unexpected update download address.");
-            var request=(HttpWebRequest)WebRequest.Create(url);request.UserAgent="DWG2Recomp/"+Launcher.Version;
+            var request=(HttpWebRequest)WebRequest.Create(url);request.UserAgent="DWG2Recomp/"+ResolvedVersion;
             request.Accept="application/vnd.github+json";request.AllowAutoRedirect=false;
             request.Timeout=timeout;request.ReadWriteTimeout=timeout;
             var response=(HttpWebResponse)request.GetResponse();int status=(int)response.StatusCode;
@@ -134,7 +155,7 @@ internal sealed class UpdateService : IDisposable {
                     string metadata=null;
                     if(manual)RunProgress("Checking for updates",delegate(Action<string,long,long> report) {report("Checking GitHub for a newer release...",0,0);metadata=Metadata();});
                     else metadata=Metadata();
-                    Release release=Select(metadata,Launcher.Version,testChannel);
+                    Release release=Select(metadata,ResolvedVersion,testChannel);
                     if(!stopped) {
                         if(release==null){if(manual)ShowInformation("No update available","You have the latest available build.");Log("No newer compatible player package.");}
                         else if(manual||declined!=release.Tag) {
@@ -190,12 +211,7 @@ internal sealed class UpdateService : IDisposable {
         var state=new JavaScriptSerializer().DeserializeObject(original) as Dictionary<string,object>;
         string version=state==null?null:StringValue(state,"version");
         if(version==null||VersionNumber(version)<0)throw new InvalidDataException("Invalid update completion version.");
-        // Defer the "Launcher updated" notification until after preparation and game launch.
-        // The update progress window (Apply-DownloadedUpdate.ps1) already shows continuous
-        // progress until the game window is visible. Showing another prompt here would be
-        // redundant and appear before preparation completes.
-        // Just log and delete the receipt; the player already saw the update progress.
-        Log("Update completed: "+version);
+        ShowInformation("Launcher updated","The launcher was updated to "+version+".\n\nYour game files, saves and settings were kept. Any required game preparation is shown separately.");
         if(File.Exists(receipt)&&File.ReadAllText(receipt)==original)File.Delete(receipt);
     }
     void DownloadAndQueue(Release release) {
@@ -325,7 +341,7 @@ internal sealed class UpdatePrompt : Form {
     internal UpdatePrompt(string root,string tag,bool install) {
         Text=install?"DWG2 — Install update":"DWG2 — Update available";ClientSize=new Size(500,220);FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=false;MinimizeBox=false;StartPosition=FormStartPosition.CenterScreen;BackColor=Color.FromArgb(16,25,43);ForeColor=Color.White;Font=new Font("Segoe UI",10);
         Controls.Add(new Label{Text=install?"Close and install the update?":"DWG2 Recomp "+tag+" is available",Location=new Point(24,22),Size=new Size(455,30),Font=new Font("Segoe UI",13,FontStyle.Bold)});
-        Controls.Add(new Label{Text=install?"Save your progress first. Yes closes the game and launcher, installs the update, then reopens it. No installs after you quit.":"Download the update now. You can choose when to close and install after it is verified.",Location=new Point(24,68),Size=new Size(455,54)});
+        Controls.Add(new Label{Text=install?"Save your progress first. Yes closes the game and launcher, installs the update, then launches the game. No installs after you quit.":"Download the update now. You can choose when to close and install after it is verified.",Location=new Point(24,68),Size=new Size(455,54)});
         var yes=new Button{Text=install?"✕ / A  —  Close and install":"✕ / A  —  Update",DialogResult=DialogResult.Yes,Location=new Point(24,148),Size=new Size(215,46),BackColor=Color.FromArgb(200,160,55),ForeColor=Color.Black};
         var no=new Button{Text=install?"○ / B  —  Later":"○ / B  —  Not now",DialogResult=DialogResult.No,Location=new Point(260,148),Size=new Size(215,46)};
         Controls.Add(yes);Controls.Add(no);AcceptButton=yes;CancelButton=no;ActiveControl=no;

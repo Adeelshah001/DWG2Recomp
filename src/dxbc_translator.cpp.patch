@@ -1,0 +1,52 @@
+--- a/src/graphics/pipeline/shader/dxbc_translator.cpp
++++ b/src/graphics/pipeline/shader/dxbc_translator.cpp
+@@ -60,7 +60,7 @@
+                                            bool gamma_render_target_as_unorm8,
+                                            bool msaa_2x_supported, uint32_t draw_resolution_scale_x,
+                                            uint32_t draw_resolution_scale_y,
+-                                           bool force_emit_source_map)
++                                           bool force_emit_source_map, uint32_t dwg2_scale_denominator)
+     : a_(shader_code_, statistics_),
+       ao_(shader_object_, statistics_),
+       vendor_id_(vendor_id),
+@@ -70,7 +70,10 @@
+       msaa_2x_supported_(msaa_2x_supported),
+       draw_resolution_scale_x_(draw_resolution_scale_x),
+       draw_resolution_scale_y_(draw_resolution_scale_y),
++      dwg2_scale_denominator_(dwg2_scale_denominator),
+       emit_source_map_(force_emit_source_map || REXCVAR_GET(dxbc_source_map)) {
++  assert_true(dwg2_scale_denominator==1 ||
++    (dwg2_scale_denominator==2&&draw_resolution_scale_x==3&&draw_resolution_scale_y==3&&!edram_rov_used));
+   assert_not_zero(draw_resolution_scale_x);
+   assert_not_zero(draw_resolution_scale_y);
+   // Don't allocate again and again for the first shader.
+@@ -664,7 +667,7 @@
+       // is passed to tfetch (assuming the game doesn't round it by itself),
+       // it will be sampled with higher resolution too.
+       a_.OpMul(dxbc::Dest::R(param_gen_temp, resolution_scaled_axes), dxbc::Src::R(param_gen_temp),
+-               dxbc::Src::LF(1.0f / draw_resolution_scale_x_, 1.0f / draw_resolution_scale_y_, 1.0f,
++               dxbc::Src::LF(1.0f / Dwg2ScaleX(), 1.0f / Dwg2ScaleY(), 1.0f,
+                              1.0f));
+     }
+     if (shader_modification.pixel.param_gen_point) {
+@@ -738,9 +741,20 @@
+       a_.OpUDiv(dxbc::Dest::Null(), dxbc::Dest::R(memexport_condition_temp, resolution_scaled_axes),
+                 dxbc::Src::R(memexport_condition_temp),
+                 dxbc::Src::LU(draw_resolution_scale_x_, draw_resolution_scale_y_, 0, 0));
++      if(dwg2_scale_denominator_==2) {
++        // In each three-host-pixel period choose two representatives, one for
++        // each guest pixel. The original half-pixel convention changes phase.
++        a_.OpUBFE(dxbc::Dest::R(memexport_condition_temp,0b0100),dxbc::Src::LU(1),
++          dxbc::Src::LU(kSysFlag_Dwg2HalfPixel_Shift),LoadFlagsSystemConstant());
++        a_.OpXOr(dxbc::Dest::R(memexport_condition_temp,0b0100),
++          dxbc::Src::R(memexport_condition_temp,dxbc::Src::kZZZZ),dxbc::Src::LU(1));
++        a_.OpINE(dxbc::Dest::R(memexport_condition_temp,resolution_scaled_axes),
++          dxbc::Src::R(memexport_condition_temp),dxbc::Src::R(memexport_condition_temp,dxbc::Src::kZZZZ));
++      } else {
+       a_.OpIEq(dxbc::Dest::R(memexport_condition_temp, resolution_scaled_axes),
+                dxbc::Src::R(memexport_condition_temp),
+                dxbc::Src::LU(draw_resolution_scale_x_ >> 1, draw_resolution_scale_y_ >> 1, 0, 0));
++      }
+       for (uint32_t i = 0; i < 2; ++i) {
+         if (!(resolution_scaled_axes & (1 << i))) {
+           continue;

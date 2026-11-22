@@ -9,7 +9,7 @@ namespace dwg2 {
 struct RenderScale {
   uint32_t numerator=1,denominator=1;
   constexpr bool SupportedProfile() const {
-    return (denominator==1&&numerator>=1&&numerator<=7)||(numerator==3&&denominator==2);
+    return (denominator==1&&numerator>=1&&numerator<=3)||(numerator==3&&denominator==2);
   }
   constexpr int32_t Boundary(int32_t guest) const {
     if(!SupportedProfile())throw std::invalid_argument("Unsupported render scale");

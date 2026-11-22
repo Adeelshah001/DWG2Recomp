@@ -1,5 +1,6 @@
 // Reuse the original font and every original textbox/background draw.
 #include "pc_storage_text.h"
+#include <cstring>
 extern "C" void __imp__sub_82133FC0(PPCContext&,uint8_t*);
 extern "C" void sub_82133FC0(PPCContext& ctx,uint8_t* base) {
  const uint32_t pointer=ctx.r4.u32,stack=ctx.r1.u32;

@@ -28,20 +28,23 @@ void D3D12TextureCache::Dwg2RecognizeAtlas(D3D12Texture& texture) {
      key.dimension==xenos::DataDimension::k2DOrStacked&&key.GetDepthOrArraySize()==1&&!key.mip_max_level) {
     const auto& layout=texture.guest_layout().base;const uint32_t address=key.base_page<<12;
     if(!address||uint64_t(address)+texture.GetGuestBaseSize()>0x20000000ULL)return;
-    std::vector<uint8_t> blocks(131072);
-    rex::thread::global_critical_region region;auto lock=region.Acquire();
-    const uint8_t* data=command_processor_.Dwg2Memory().TranslatePhysical(address);
-    for(uint32_t y=0;y<64;++y)for(uint32_t x=0;x<128;++x) {
-      uint32_t at=key.tiled?uint32_t(texture_util::GetTiledOffset2D(x,y,layout.row_pitch_bytes/16,4)):y*layout.row_pitch_bytes+x*16;
-      if(uint64_t(at)+16>texture.GetGuestBaseSize())return;
-      for(uint32_t word=0;word<4;++word) {
-        uint32_t value;std::memcpy(&value,data+at+word*4,4);value=xenos::GpuSwap(value,key.endianness);
-        std::memcpy(blocks.data()+(y*128+x)*16+word*4,&value,4);
+    static thread_local std::vector<uint8_t> blocks;
+    blocks.resize(131072);
+    {
+      rex::thread::global_critical_region region;auto lock=region.Acquire();
+      const uint8_t* data=command_processor_.Dwg2Memory().TranslatePhysical(address);
+      for(uint32_t y=0;y<64;++y)for(uint32_t x=0;x<128;++x) {
+        uint32_t at=key.tiled?uint32_t(texture_util::GetTiledOffset2D(x,y,layout.row_pitch_bytes/16,4)):y*layout.row_pitch_bytes+x*16;
+        if(uint64_t(at)+16>texture.GetGuestBaseSize())return;
+        for(uint32_t word=0;word<4;++word) {
+          uint32_t value;std::memcpy(&value,data+at+word*4,4);value=xenos::GpuSwap(value,key.endianness);
+          std::memcpy(blocks.data()+(y*128+x)*16+word*4,&value,4);
+        }
       }
     }
     const auto hash=dwg2::atlas::Hash(blocks);
     if(hash.a==0x44a946c9ce7324edULL&&hash.b==0xd764f0715b061c72ULL) {
-      texture.dwg2_atlas_kind=5;texture.dwg2_original=std::move(blocks);
+      texture.dwg2_atlas_kind=5;texture.dwg2_original=blocks;
       REXGPU_INFO("DWG2 identified options controller diagram");
     }
     return;
@@ -53,7 +56,8 @@ void D3D12TextureCache::Dwg2RecognizeAtlas(D3D12Texture& texture) {
   const auto& layout=texture.guest_layout().base;
   const uint32_t address=key.base_page<<12;
   if(!address||uint64_t(address)+texture.GetGuestBaseSize()>0x20000000ULL)return;
-  std::vector<uint8_t> pixels(size_t(width)*height*4);
+  static thread_local std::vector<uint8_t> pixels;
+  pixels.resize(size_t(width)*height*4);
   {
     rex::thread::global_critical_region region;auto lock=region.Acquire();
     const uint8_t* data=command_processor_.Dwg2Memory().TranslatePhysical(address);
@@ -67,7 +71,7 @@ void D3D12TextureCache::Dwg2RecognizeAtlas(D3D12Texture& texture) {
     }
   }
   texture.dwg2_atlas_kind=dwg2::atlas::Identify(pixels,width,height);
-  if(texture.dwg2_atlas_kind>=2)texture.dwg2_original=std::move(pixels);
+  if(texture.dwg2_atlas_kind>=2)texture.dwg2_original=pixels;
   if(texture.dwg2_atlas_kind)REXGPU_INFO("DWG2 identified HUD/prompt atlas: {}x{}, kind {}",width,height,texture.dwg2_atlas_kind);
 }
 void D3D12TextureCache::Dwg2ApplyAtlas(D3D12Texture& texture) {
@@ -85,7 +89,7 @@ void D3D12TextureCache::Dwg2ApplyAtlas(D3D12Texture& texture) {
   // already aligned to D3D12's 256-byte texture-copy pitch requirement.
   ID3D12Resource* buffer=nullptr;size_t offset=0;
   auto* upload=command_processor_.GetConstantBufferPool().Request(
-      command_processor_.GetCurrentSubmission(),pixels.size(),D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT,
+      command_processor_.GetCurrentFrame(),pixels.size(),D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT,
       &buffer,&offset,nullptr);
   if(!upload)return;
   std::memcpy(upload,pixels.data(),pixels.size());

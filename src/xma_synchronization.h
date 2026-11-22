@@ -29,4 +29,31 @@ inline void MergeDecoder(Context& fresh, const Context& decoded, const Context& 
   // The output consumer belongs to the guest. Restoring the decoder snapshot
   // here rewinds consumption and can eventually strand a streaming voice.
 }
+
+inline constexpr uint32_t kBitsPerPacket = 2048 * 8;
+inline constexpr uint32_t kBitsPerPacketHeader = 32;
+
+constexpr bool HasFrameStart(uint32_t packet_frame_offset) {
+  return packet_frame_offset >= kBitsPerPacketHeader && packet_frame_offset < kBitsPerPacket;
+}
+
+inline uint32_t NextPacketIndex(uint32_t packet_index, uint8_t skip_count, uint32_t packet_count) {
+  return skip_count == 0xFF ? packet_count : packet_index + uint32_t(skip_count) + 1;
+}
+
+inline uint32_t FindNextPacketReadOffset(const uint8_t* buffer, uint32_t start_packet_index,
+                                         uint32_t packet_count) {
+  if (!buffer) return kBitsPerPacketHeader;
+  for (uint32_t idx = start_packet_index; idx < packet_count;) {
+    const uint8_t* pkt = buffer + std::size_t(idx) * 2048u;
+    const uint32_t val =
+        (uint32_t(pkt[0] & 0x3u) << 13) | (uint32_t(pkt[1]) << 5) | (uint32_t(pkt[2]) >> 3);
+    const uint32_t offset = val + kBitsPerPacketHeader;
+    if (HasFrameStart(offset)) return idx * kBitsPerPacket + offset;
+    const uint8_t skip = pkt[3];
+    if (skip == 0xFF) return kBitsPerPacketHeader;
+    idx += uint32_t(skip) + 1u;
+  }
+  return kBitsPerPacketHeader;
+}
 }
