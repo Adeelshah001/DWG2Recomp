@@ -19,6 +19,8 @@ for f in TC.rglob('*'):
  allowed=parts[0] in ('include','lib','x86_64-w64-mingw32') or n.name=='LICENSE.TXT'
  if parts[0]=='bin':allowed=n.name in bins or (f.suffix=='.dll' and n.name not in exclude_dll) or (f.suffix=='.cfg' and ('x86_64' in n.name or n.name=='mingw32-common.cfg'))
  if any(x in n.name for x in ['aarch64','armv7','i386','i686','arm64ec']):allowed=False
+ if parts[0]=='include' and f.suffix.lower()=='.idl':allowed=False
+ if parts[0]=='lib' and any(x in n.name.lower() for x in ['asan','ubsan','tsan','msan']):allowed=False
  if allowed:copy(f,'toolchain/'+n.as_posix())
 for base,dest in [(SDK/'include','include'),(B/'include','include')]:
  for f in base.rglob('*'):

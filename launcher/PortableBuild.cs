@@ -101,25 +101,34 @@ internal static class PortableBuild {
         try {
             report("Expanding temporary preparation tools...");
             long total=0;var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            byte[] buffer=new byte[65536];byte[] empty=new byte[0];
+            var madeDirs=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var sw=Stopwatch.StartNew();long nextReportMs=0;
+            using(var sha=System.Security.Cryptography.SHA256.Create())
             using(var zip=ZipFile.OpenRead(archive)) {
                 foreach(var entry in zip.Entries) {
                     string name=entry.FullName;
                     if(name.Contains("\\") || name.Contains(":") || name.Split('/').Any(x=>x=="" || x=="." || x=="..") || !expected.ContainsKey(name) || !seen.Add(name)) throw new InvalidDataException("Unexpected preparation archive entry.");
                     if(entry.Length<0 || total>info.expandedBytes-entry.Length) throw new InvalidDataException("Preparation archive size differs.");
-                    string output=Inside(temporary,name);Directory.CreateDirectory(Path.GetDirectoryName(output));
+                    string output=Inside(temporary,name);
+                    string dir=Path.GetDirectoryName(output);if(madeDirs.Add(dir))Directory.CreateDirectory(dir);
+                    sha.Initialize();long entryBytes=0;
                     using(var input=entry.Open()) using(var stream=new FileStream(output,FileMode.CreateNew,FileAccess.Write)) {
-                        byte[] buffer=new byte[1024*1024];int count;
+                        int count;
                         while((count=input.Read(buffer,0,buffer.Length))!=0) {
-                            stream.Write(buffer,0,count);total+=count;
-                            if(progress!=null) progress.Report(0.03+0.17*total/Math.Max(1,info.expandedBytes),"Expanding temporary preparation tools...");
+                            sha.TransformBlock(buffer,0,count,null,0);stream.Write(buffer,0,count);total+=count;entryBytes+=count;
+                            if(progress!=null && sw.ElapsedMilliseconds>=nextReportMs) { nextReportMs=sw.ElapsedMilliseconds+50;progress.Report(0.03+0.17*total/Math.Max(1,info.expandedBytes),"Expanding temporary preparation tools..."); }
                         }
                     }
-                    if(Launcher.Hash(output)!=expected[name].sha256) throw new InvalidDataException("Damaged preparation component: "+name);
+                    sha.TransformFinalBlock(empty,0,0);
+                    string digest=BitConverter.ToString(sha.Hash).Replace("-","").ToLowerInvariant();
+                    if(entryBytes!=entry.Length) throw new InvalidDataException("Unexpected preparation archive entry size: "+name);
+                    if(digest!=expected[name].sha256) throw new InvalidDataException("Damaged preparation component: "+name);
                 }
             }
             if(total!=info.expandedBytes || seen.Count!=expected.Count) throw new InvalidDataException("Incomplete preparation archive.");
             Package=temporary;
-            PrepareExpanded(report,progress==null?null:progress.Range(0.20,0.98));
+            PrepareExpanded(report,progress==null?null:progress.Range(0.20,0.98),true);
         } finally {
             Package=CompressedPackage;
             // Only this unique owned tools directory is removed; imported games and saves are outside it.
@@ -127,13 +136,13 @@ internal static class PortableBuild {
         }
         if(progress!=null) progress.Report(1,"Preparation finished.");
     }
-    static void PrepareExpanded(Action<string> report,SetupProgress progress) {
+    static void PrepareExpanded(Action<string> report,SetupProgress progress,bool alreadyVerified=false) {
         var r=Load();report("Checking bundled preparation tools...");
         var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);int checkedFiles=0;
         foreach(var f in r.files) {
             if(!seen.Add(f.path)) throw new InvalidDataException("Duplicate portable package entry.");
             string path=Inside(Package,f.path);
-            if(!File.Exists(path) || Launcher.Hash(path)!=f.sha256) throw new InvalidDataException("The release package is missing or damaged: "+f.path+". Extract the player ZIP again.");
+            if(!File.Exists(path) || (!alreadyVerified && Launcher.Hash(path)!=f.sha256)) throw new InvalidDataException("The release package is missing or damaged: "+f.path+". Extract the player ZIP again.");
             checkedFiles++;if(progress!=null) progress.Report(0.04*checkedFiles/Math.Max(1,r.files.Length),"Checking preparation tools...");
         }
         string compiler=Inside(Package,r.compiler),generator=Inside(Package,r.generator);
@@ -152,7 +161,7 @@ internal static class PortableBuild {
         string generated=Path.Combine(work,"generated"),objects=Path.Combine(work,"objects");Directory.CreateDirectory(objects);
         using(var cache=new LocalBuildCache(parent,generated,Package,report)) {
         string inputHash=Launcher.Hash(Path.Combine(input,"default.xex"));
-        string generationKey=LocalBuildCache.Key(new[]{"generated-source-v1",inputHash}.Concat(r.files.Where(f=>f.path.StartsWith("codegen/",StringComparison.Ordinal)||f.path.StartsWith("config/",StringComparison.Ordinal)||f.path.StartsWith("runtime/",StringComparison.Ordinal)).OrderBy(f=>f.path,StringComparer.Ordinal).Select(f=>f.path+":"+f.sha256)).ToArray());
+        string generationKey=LocalBuildCache.Key(new[]{"generated-source-v1",inputHash}.Concat(r.files.Where(f=>f.path.StartsWith("codegen/",StringComparison.Ordinal)||f.path.StartsWith("config/",StringComparison.Ordinal)).OrderBy(f=>f.path,StringComparer.Ordinal).Select(f=>f.path+":"+f.sha256)).ToArray());
         bool generationReused=cache.RestoreGeneration(generationKey,generated);
         if(!generationReused) {
         report("Preparing your game locally...");
@@ -183,11 +192,17 @@ internal static class PortableBuild {
         string headerInventory=LocalBuildCache.Key(r.files.Where(f=>f.path.StartsWith("include/",StringComparison.Ordinal)||f.path.StartsWith("headers/",StringComparison.Ordinal)).Select(f=>f.path).OrderBy(x=>x,StringComparer.Ordinal).Concat(Directory.GetFiles(generated,"*.h").Select(Path.GetFileName).OrderBy(x=>x,StringComparer.Ordinal)).ToArray());
         string context=LocalBuildCache.Key("compile-cache-v1",compilerIdentity,headerInventory,String.Join("\n",r.compile),"stable-prefix-map-v1",LocalBuildCache.DependencyKey(pchDeps));
         var outputs=new string[sources.Length];var keys=new string[sources.Length];var pending=new List<int>();int reused=0;
-        for(int i=0;i<sources.Length;++i){keys[i]=LocalBuildCache.Key(context,Path.GetFileName(sources[i]),cache.Hash(sources[i]));if(cache.Reuse(keys[i],out outputs[i]))++reused;else pending.Add(i);}
+        var hitFlags=new bool[sources.Length];
+        int workers=Math.Max(2,Math.Min(Environment.ProcessorCount,8));
+        Parallel.For(0,sources.Length,new ParallelOptions{MaxDegreeOfParallelism=workers},i=>{
+            keys[i]=LocalBuildCache.Key(context,Path.GetFileName(sources[i]),cache.Hash(sources[i]));
+            hitFlags[i]=cache.Reuse(keys[i],out outputs[i]);
+        });
+        for(int i=0;i<sources.Length;++i){if(hitFlags[i])++reused;else pending.Add(i);}
         report("Build cache: reusing "+reused+" of "+sources.Length+" game parts; compiling "+pending.Count+".");
         if(pending.Count>0)Run("prepare-headers",compiler,common.Concat(new[]{"-x","c++-header",Path.Combine(generated,"dwg2_pch.h"),"-o",pch}),work,report);
         int completed=reused;
-        Parallel.ForEach(pending,new ParallelOptions{MaxDegreeOfParallelism=2},i=>{
+        Parallel.ForEach(pending,new ParallelOptions{MaxDegreeOfParallelism=workers},i=>{
             string output=Path.Combine(objects,i+".obj"),depfile=Path.Combine(objects,i+".d");outputs[i]=output;
             Run("prepare-part-"+i,compiler,common.Concat(new[]{"-include-pch",pch,"-MD","-MF",depfile,"-MT","unit","-c",sources[i],"-o",output}),work,report);
             cache.Store(keys[i],output,cache.UnitDependencies(cache.Dependencies(depfile,pch)));
@@ -268,7 +283,7 @@ internal sealed class LocalBuildCache : System.IDisposable {
         }
         return digest;
     }
-    static bool CacheFault(System.Exception e){return e is System.IO.IOException||e is System.UnauthorizedAccessException||e is System.ArgumentException||e is System.InvalidOperationException;}
+    static bool CacheFault(System.Exception e){var agg=e as System.AggregateException;if(agg!=null)return agg.InnerExceptions.Count>0&&agg.InnerExceptions.All(CacheFault);return e is System.IO.IOException||e is System.UnauthorizedAccessException||e is System.ArgumentException||e is System.InvalidOperationException;}
     static bool FileName(string n){return !System.String.IsNullOrEmpty(n)&&n==System.IO.Path.GetFileName(n)&&n.IndexOfAny(new[]{'\\','/',':'})<0;}
     internal bool RestoreGeneration(string key,string destination) {
         bool copying=false;
@@ -279,20 +294,34 @@ internal sealed class LocalBuildCache : System.IDisposable {
             var names=new System.Collections.Generic.HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
             foreach(var f in entry.files) {
                 if(f==null||!FileName(f.name)||!(f.name.EndsWith(".cpp")||f.name.EndsWith(".h"))||!names.Add(f.name)||!Hex(f.hash))return false;
-                string blob=At("blobs",f.hash,".blob");if(!System.IO.File.Exists(blob)||Launcher.Hash(blob)!=f.hash)return false;
             }
             if(entry.seal!=Key(new[]{"generation-v1",key}.Concat(entry.files.Select(f=>f.name+":"+f.hash)).ToArray()))return false;
             if(!names.Contains("dwg2_pch.h")||entry.files.Count(x=>x.name.EndsWith(".cpp"))<2)return false;
+            int workers=System.Math.Max(2,System.Math.Min(System.Environment.ProcessorCount,8));
+            int valid=1;
+            System.Threading.Tasks.Parallel.ForEach(entry.files,new System.Threading.Tasks.ParallelOptions{MaxDegreeOfParallelism=workers},f=>{
+                if(System.Threading.Interlocked.CompareExchange(ref valid,0,0)==0)return;
+                string blob=At("blobs",f.hash,".blob");
+                if(!System.IO.File.Exists(blob)||Launcher.Hash(blob)!=f.hash)System.Threading.Interlocked.Exchange(ref valid,0);
+            });
+            if(valid==0)return false;
             System.IO.Directory.CreateDirectory(destination);
             // Validate every blob before copying anything into the new build workspace.
             copying=true;
-            foreach(var f in entry.files)System.IO.File.Copy(At("blobs",f.hash,".blob"),System.IO.Path.Combine(destination,f.name),false);
+            System.Threading.Tasks.Parallel.ForEach(entry.files,new System.Threading.Tasks.ParallelOptions{MaxDegreeOfParallelism=workers},f=>{
+                System.IO.File.Copy(At("blobs",f.hash,".blob"),System.IO.Path.Combine(destination,f.name),false);
+            });
             return true;
         } catch(System.Exception e) {if(copying||!CacheFault(e))throw;report("Generated-source cache unavailable; preparing fresh source.");return false;}
     }
     internal void StoreGeneration(string key,string directory) {
         try {
-            var files=System.IO.Directory.GetFiles(directory).Where(p=>p.EndsWith(".cpp")||p.EndsWith(".h")).OrderBy(p=>p,System.StringComparer.Ordinal).Select(p=>new GeneratedFile{name=System.IO.Path.GetFileName(p),hash=Blob("blobs",p,".blob")}).ToArray();
+            string[] paths=System.IO.Directory.GetFiles(directory).Where(p=>p.EndsWith(".cpp")||p.EndsWith(".h")).OrderBy(p=>p,System.StringComparer.Ordinal).ToArray();
+            var files=new GeneratedFile[paths.Length];
+            int workers=System.Math.Max(2,System.Math.Min(System.Environment.ProcessorCount,8));
+            System.Threading.Tasks.Parallel.For(0,paths.Length,new System.Threading.Tasks.ParallelOptions{MaxDegreeOfParallelism=workers},i=>{
+                files[i]=new GeneratedFile{name=System.IO.Path.GetFileName(paths[i]),hash=Blob("blobs",paths[i],".blob")};
+            });
             var entry=new Generation{key=key,files=files,seal=Key(new[]{"generation-v1",key}.Concat(files.Select(f=>f.name+":"+f.hash)).ToArray())};Atomic(At("generations",key,".json"),p=>System.IO.File.WriteAllText(p,json.Serialize(entry),new System.Text.UTF8Encoding(false)));
         } catch(System.Exception e){if(!CacheFault(e))throw;report("Could not retain generated-source cache; the game build can continue.");}
     }

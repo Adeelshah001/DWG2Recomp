@@ -51,7 +51,7 @@ internal sealed class UpdateService : IDisposable {
                     }
                 }
             } catch {}
-            return "0.8-alpha";
+            return "0.8.1-alpha";
         }
     }
     [DllImport("user32.dll",SetLastError=true)]static extern bool PostMessage(IntPtr window,uint message,IntPtr w,IntPtr l);
