@@ -1,15 +1,16 @@
 --- a/src/graphics/d3d12/texture_cache.cpp
 +++ b/src/graphics/d3d12/texture_cache.cpp
-@@ -1,3 +1,8 @@
+@@ -1,3 +1,9 @@
 +#include "render_scale.h"
 +#include "fractional_texture_load_bytecode.h"
 +#include "fractional_msaa_bytecode.h"
 +#include "fractional_depth_msaa_bytecode.h"
 +#include "ui_atlas.h"
++#include "keyboard_art.h"
  /**
   ******************************************************************************
   * Xenia : Xbox 360 Emulator Research Project                                 *
-@@ -33,6 +38,8 @@
+@@ -33,6 +39,8 @@
  #include <rex/ui/d3d12/d3d12_util.h>
  
  namespace rex::graphics::d3d12 {
@@ -18,7 +19,7 @@
  
  // Generated with `xb buildshaders`.
  namespace shaders {
-@@ -368,12 +375,14 @@
+@@ -368,12 +376,14 @@
                                       uint32_t draw_resolution_scale_x,
                                       uint32_t draw_resolution_scale_y,
                                       D3D12CommandProcessor& command_processor,
@@ -35,7 +36,7 @@
    // While the texture descriptor cache still exists (referenced by
    // ~D3D12Texture), destroy all textures.
    DestroyAllTextures(true);
-@@ -388,6 +397,8 @@
+@@ -388,6 +398,8 @@
  }
  
  bool D3D12TextureCache::Initialize() {
@@ -44,7 +45,7 @@
    const ui::d3d12::D3D12Provider& provider = command_processor_.GetD3D12Provider();
    ID3D12Device* device = provider.GetDevice();
  
-@@ -642,10 +653,13 @@
+@@ -642,10 +654,13 @@
        provider.OffsetViewDescriptor(null_srv_descriptor_heap_start_,
                                      uint32_t(NullSRVDescriptorIndex::kCube)));
  
@@ -58,7 +59,7 @@
    TextureCache::ClearCache();
  
    // Clear texture descriptor cache.
-@@ -656,6 +670,7 @@
+@@ -656,6 +671,7 @@
  
  void D3D12TextureCache::BeginSubmission(uint64_t new_submission_index) {
    TextureCache::BeginSubmission(new_submission_index);
@@ -66,7 +67,7 @@
  
    // ExecuteCommandLists is a full UAV and aliasing barrier.
    if (IsDrawResolutionScaled()) {
-@@ -744,6 +759,7 @@
+@@ -744,6 +760,7 @@
      }
      D3D12Texture* binding_texture = static_cast<D3D12Texture*>(binding->texture);
      if (binding_texture != nullptr) {
@@ -74,7 +75,7 @@
        // Will be referenced by the command list, so mark as used.
        binding_texture->MarkAsUsed();
        command_processor_.PushTransitionBarrier(
-@@ -987,7 +1003,17 @@
+@@ -987,7 +1004,17 @@
      parameters.mip_linear = mip_filter == xenos::TextureFilter::kLinear;
    }
    parameters.mip_base_map = mip_base_map;
@@ -93,7 +94,7 @@
    return parameters;
  }
  
-@@ -1517,6 +1543,8 @@
+@@ -1517,6 +1544,8 @@
  }
  
  std::unique_ptr<TextureCache::Texture> D3D12TextureCache::CreateTexture(TextureKey key) {
@@ -102,7 +103,7 @@
    D3D12_RESOURCE_DESC desc;
    desc.Format = GetDXGIResourceFormat(key);
    if (desc.Format == DXGI_FORMAT_UNKNOWN) {
-@@ -1533,8 +1561,8 @@
+@@ -1533,8 +1562,8 @@
    desc.Width = key.GetWidth();
    desc.Height = key.GetHeight();
    if (key.scaled_resolve) {
@@ -113,7 +114,7 @@
    }
    desc.DepthOrArraySize = key.GetDepthOrArraySize();
    desc.MipLevels = key.mip_max_level + 1;
-@@ -1561,6 +1589,8 @@
+@@ -1561,6 +1590,8 @@
                                                                bool load_mips) {
    D3D12Texture& d3d12_texture = static_cast<D3D12Texture&>(texture);
    TextureKey texture_key = d3d12_texture.key();
@@ -122,7 +123,7 @@
  
    DeferredCommandList& command_list = command_processor_.GetDeferredCommandList();
    ID3D12Device* device = command_processor_.GetD3D12Provider().GetDevice();
-@@ -1931,6 +1961,7 @@
+@@ -1931,6 +1962,7 @@
    }
  
    command_processor_.ReleaseScratchGPUBuffer(copy_buffer, copy_buffer_state);

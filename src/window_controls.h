@@ -40,12 +40,12 @@ constexpr UINT kCheckUpdates=41005;
 constexpr UINT kVersion=41006;
 constexpr UINT kFovSlider=41060;
 constexpr UINT kFps60=41071,kFps120=41072,kFpsUncapped=41073,kFpsCounter=41074;
-constexpr UINT kScale1 = 41011, kScale3 = 41013, kScale15=41014, kHelp = 41020;
-inline UINT ScaleCommand(int code) {return code==15?kScale15:kScale1+code-1;}
-inline void CheckScale(HMENU menu,int code) {for(int c:{1,15,2,3})CheckMenuItem(menu,ScaleCommand(c),MF_BYCOMMAND|(c==code?MF_CHECKED:MF_UNCHECKED));}
+constexpr UINT kScale1 = 41011, kScale3 = 41013, kHelp = 41020;
+inline UINT ScaleCommand(int code) {return kScale1+code-1;}
+inline void CheckScale(HMENU menu,int code) {for(int c:{1,2,3})CheckMenuItem(menu,ScaleCommand(c),MF_BYCOMMAND|(c==code?MF_CHECKED:MF_UNCHECKED));}
 extern "C" __declspec(dllexport) int Dwg2GraphicsRequest(int key,int value) {
   const HWND hwnd=graphics_window.load();if(!hwnd)return 0;
-  if(key==0&&(value==1||value==15||(value>=2&&value<=3))) {
+  if(key==0&&(value>=1&&value<=3)) {
     if(graphics_pending.load())return 0;
     return PostMessageW(hwnd,WM_COMMAND,ScaleCommand(value),0)!=0;
   }
@@ -226,8 +226,8 @@ inline LRESULT CALLBACK Procedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
       if(!requested)MessageBoxW(hwnd,L"Restart could not be requested. Your game is still running.",L"Restart",MB_ICONERROR);
       return 0;
     }
-    if ((command >= kScale1 && command <= kScale3)||command==kScale15) {
-      int scale = command==kScale15?15:int(command - kScale1 + 1);
+    if (command >= kScale1 && command <= kScale3) {
+      int scale = int(command - kScale1 + 1);
       s->pending_scale=scale;
       graphics_pending.store(scale);
       dwg2::resolution::completed.store(0);
@@ -255,7 +255,7 @@ inline LRESULT CALLBACK Procedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
         L"FOV on the menu bar: live slider from Default to +100%, in 5% steps (+50% recommended).\n"
         L"FPS on the menu bar: 60 FPS, 120 FPS, Uncapped (temporary interpolation placeholders), or Show FPS Counter.\n"
         L"View > Resolution changes internal rendering and output live.\n"
-        L"1x: 1280 x 720; 1.5x: 1920 x 1080; 2x: 2560 x 1440; 3x: 3840 x 2160.\n"
+        L"1x: 1280 x 720; 2x: 2560 x 1440; 3x: 3840 x 2160.\n"
         L"A resolution change may briefly rebuild GPU resources.\n"
         L"Save from the game's menu before restarting or quitting.\n"
         L"Keyboard and controller work together. Startup movies are skipped.",
@@ -327,7 +327,6 @@ inline void Install(rex::ui::WindowSDL* owner, SDL_Window* sdl) {
   AppendMenuW(file, MF_STRING, kQuit, L"&Quit Game");
   AppendMenuW(view, MF_STRING, kFullscreen, L"&Fullscreen\tF11 / Alt+Enter");
   AppendMenuW(sizes, MF_STRING, kScale1, L"&1x - 1280 x 720");
-  AppendMenuW(sizes, MF_STRING, kScale15, L"1.&5x - 1920 x 1080");
   AppendMenuW(sizes, MF_STRING, kScale1+1, L"&2x - 2560 x 1440");
   AppendMenuW(sizes, MF_STRING, kScale3, L"&3x - 3840 x 2160");
   AppendMenuW(view, MF_POPUP, reinterpret_cast<UINT_PTR>(sizes), L"&Resolution");
@@ -375,7 +374,7 @@ inline void Install(rex::ui::WindowSDL* owner, SDL_Window* sdl) {
   dwg2::prompts::choice.store(dwg2::settings::Integer(preferences,"prompts","style",0,0,2));
   dwg2::prompts::hud_correction.store(dwg2::settings::Integer(preferences,"prompts","hud_correction",1,0,1)!=0);
   Sync(owner);
-  {int scale=dwg2::settings::Integer(preferences,"graphics","resolution_scale",1,1,15);if(!dwg2::resolution::Valid(scale))scale=1;graphics_scale.store(scale);CheckScale(menu,scale);}
+  {int scale=dwg2::settings::Integer(preferences,"graphics","resolution_scale",1,1,3);if(scale<1||scale>3)scale=1;graphics_scale.store(scale);CheckScale(menu,scale);}
   if(!dwg2::input::Load())MessageBoxW(hwnd,L"settings.ini could not be read. Default mappings are active; the file is preserved until you save new mappings.",L"Controls",MB_ICONWARNING);
   REXLOG_INFO("DWG2 settings.ini loaded: scale={} fov={} vsync={} fps={} fps_counter={} prompts={} hud_correction={}",graphics_scale.load(),dwg2::camera::percent.load(),dwg2::video::vsync.load(),dwg2::video::present_fps.load(),dwg2::video::fps_counter.load(),dwg2::prompts::choice.load(),dwg2::prompts::hud_correction.load());
   if (!owner->IsFullscreen()) {

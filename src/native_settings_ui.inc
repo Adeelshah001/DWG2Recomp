@@ -48,6 +48,23 @@ struct Dwg2GraphicsRows {uint8_t count=0;std::vector<uint8_t> previous;};
 static thread_local std::unordered_map<uint32_t,Dwg2GraphicsRows> dwg2_graphics_rows;
 struct Dwg2PauseGraphics {uint32_t owner=0,model=0,controller=0;bool active=false;};
 static thread_local Dwg2PauseGraphics dwg2_pause_graphics;
+constexpr uint8_t kDwg2GraphicsRows=6,kDwg2GraphicsVisible=5;
+static void Dwg2GraphicsSyncScroll(uint8_t* base,uint32_t model,int step_dir=0,uint8_t prev_selected=0) {
+ const uint8_t selected=base[model+1737];
+ uint8_t scroll=base[model+1738];
+ constexpr uint8_t max_scroll=kDwg2GraphicsRows-kDwg2GraphicsVisible;
+ if(step_dir>0) {
+  if(selected==0)scroll=0;
+  else if(selected>=scroll+kDwg2GraphicsVisible-1)scroll=std::min<uint8_t>(max_scroll,uint8_t(selected-(kDwg2GraphicsVisible-2)));
+ } else if(step_dir<0) {
+  if(selected==kDwg2GraphicsRows-1&&prev_selected==0)scroll=max_scroll;
+  else if(selected<=scroll)scroll=selected>0?uint8_t(selected-1):0;
+ }
+ if(scroll>max_scroll)scroll=max_scroll;
+ if(selected<scroll)scroll=selected;
+ if(selected>=scroll+kDwg2GraphicsVisible)scroll=uint8_t(selected-(kDwg2GraphicsVisible-1));
+ base[model+1738]=scroll;
+}
 static bool Dwg2GraphicsRowsSync(uint32_t model,uint8_t* base,bool active) {
  auto found=dwg2_graphics_rows.find(model);
  if(!active) {
@@ -55,27 +72,37 @@ static bool Dwg2GraphicsRowsSync(uint32_t model,uint8_t* base,bool active) {
    auto& old=found->second;std::memcpy(base+model+1748,old.previous.data(),old.previous.size());base[model+1739]=old.count;dwg2_graphics_rows.erase(found);
   }return true;
  }
- if(found==dwg2_graphics_rows.end()) {
+ const bool first_sync=found==dwg2_graphics_rows.end();
+ if(first_sync) {
   const uint8_t count=base[model+1739];if(count>32)return false;
   Dwg2GraphicsRows old;old.count=count;old.previous.assign(base+model+1748,base+model+1748+count*132);dwg2_graphics_rows.emplace(model,std::move(old));
  }
  const int scale=Dwg2GraphicsQuery(0),fov=Dwg2GraphicsQuery(1),fullscreen=Dwg2GraphicsQuery(2);
- const int vsync=Dwg2GraphicsQuery(4);
- char rows[4][128]{};
+ char rows[kDwg2GraphicsRows][128]{};
  if(scale<1||fov<0||fullscreen<0)return false;
  std::snprintf(rows[0],128,"Resolution");
  std::snprintf(rows[1],128,"Field of View");
  std::snprintf(rows[2],128,"Fullscreen");
  std::snprintf(rows[3],128,"VSync");
- for(unsigned i=0;i<4;++i){auto* row=base+model+1748+i*132;std::memset(row,0,132);std::memcpy(row,rows[i],std::strlen(rows[i])+1);}
- base[model+1739]=4;if(base[model+1737]>=4)base[model+1737]=0;base[model+1738]=0;return true;
+ std::snprintf(rows[4],128,"Frame Rate");
+ std::snprintf(rows[5],128,"FPS Counter");
+ for(unsigned i=0;i<kDwg2GraphicsRows;++i){auto* row=base+model+1748+i*132;std::memset(row,0,132);std::memcpy(row,rows[i],std::strlen(rows[i])+1);}
+ base[model+1739]=kDwg2GraphicsRows;
+ if(first_sync||base[model+1737]>=kDwg2GraphicsRows){base[model+1737]=0;base[model+1738]=0;}
+ else Dwg2GraphicsSyncScroll(base,model);
+ return true;
+}
+static int Dwg2FpsIndex(int fps) {
+ return fps==0?2:fps==120?1:0;
 }
 static void Dwg2GraphicsAdjust(uint32_t model,uint8_t* base,int delta) {
- const uint32_t row=base[model+1737];if(row>=4)return;
- const int key=row==3?4:int(row),current=Dwg2GraphicsQuery(key);if(current<0)return;
+ constexpr int kKeys[kDwg2GraphicsRows]{0,1,2,4,5,6};
+ const uint32_t row=base[model+1737];if(row>=kDwg2GraphicsRows)return;
+ const int key=kKeys[row],current=Dwg2GraphicsQuery(key);if(current<0)return;
  int next=current;
  if(row==0){if(Dwg2GraphicsQuery(3)>0)return;next=std::max(1,std::min(3,current+delta));}
  else if(row==1)next=std::max(0,std::min(100,current+delta*5));
+ else if(row==4){constexpr int kRates[]{60,120,0};next=kRates[std::clamp(Dwg2FpsIndex(current)+delta,0,2)];}
  else next=current?0:1;
  if(next!=current)Dwg2GraphicsChange(key,next);
 }
@@ -106,11 +133,19 @@ extern "C" void sub_821B4380(PPCContext& ctx,uint8_t* base) {
  }
  Dwg2ExpandedOptionsUpdate(ctx,base);Dwg2GraphicsRowsSync(model,base,base[model+1736]==5);
 }
+static void Dwg2GraphicsNavigateRow(PPCContext& ctx,uint8_t* base,uint32_t model,uint32_t controller) {
+ const uint32_t input=0x826C3998+68*controller,pressed=REX_LOAD_U32(input+96),repeat=REX_LOAD_U32(input+100);
+ const uint8_t prev=base[model+1737];
+ Dwg2MenuCall(__imp__sub_82145078,ctx,base,model+1737,kDwg2GraphicsRows,controller);
+ const int step=(repeat&2)?1:((repeat&1)?-1:((pressed&2)?1:((pressed&1)?-1:0)));
+ Dwg2GraphicsSyncScroll(base,model,step,prev);
+}
 static bool Dwg2OpenPauseGraphics(PPCContext& ctx,uint8_t* base,uint32_t owner,uint32_t controller) {
  if(!dwg2_menu_memory||Dwg2GraphicsQuery(0)<1)return false;
  auto& state=dwg2_pause_graphics;
  if(!state.model)state.model=dwg2_menu_memory->SystemHeapAlloc(8192,16);
  if(!state.model)return false;
+ dwg2_graphics_rows.erase(state.model);
  // Build only the UI: full Options initialization resets the live player profile.
  std::memset(base+state.model,0,8192);Dwg2MenuCall(sub_821B4880,ctx,base,state.model,state.model);
  auto* list=base+state.model+8;std::memcpy(list,list+5*140,140);dwg2::menus::Store(list+1680,1);
@@ -129,7 +164,7 @@ static void Dwg2SettingsBriefingUpdate(PPCContext& ctx,uint8_t* base) {
    if(pressed&cancel)state.active=false;
    else {
     Dwg2MenuCall(__imp__sub_821B4B08,ctx,base,state.model);
-    Dwg2MenuCall(__imp__sub_82145078,ctx,base,state.model+1737,4,controller);
+    Dwg2GraphicsNavigateRow(ctx,base,state.model,controller);
     if(!(repeat&3)&&(pressed&12))Dwg2GraphicsAdjust(state.model,base,(pressed&8)?1:-1);
     Dwg2GraphicsRowsSync(state.model,base,true);
    }

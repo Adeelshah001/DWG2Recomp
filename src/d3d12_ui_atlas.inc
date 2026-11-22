@@ -15,6 +15,12 @@ bool Dwg2HudCorrection() {
   static auto query=reinterpret_cast<Query>(GetProcAddress(GetModuleHandleW(L"rexruntime.dll"),"Dwg2HudCorrection"));
   return query&&query()!=0;
 }
+uint32_t Dwg2InputGeneration() {
+ using Query=unsigned(*)();static auto query=(Query)GetProcAddress(GetModuleHandleW(L"rexruntime.dll"),"Dwg2InputGeneration");return query?query():0;
+}
+dwg2::keyboard::Bindings Dwg2KeyboardBindings(uint32_t& generation,dwg2::keyboard::Bindings& alternate) {
+ using Query=int(*)(unsigned*,int,unsigned*);static auto query=(Query)GetProcAddress(GetModuleHandleW(L"rexruntime.dll"),"Dwg2KeyboardSnapshot");dwg2::keyboard::Bindings result{};std::array<unsigned,50> snapshot{};if(query&&query(snapshot.data(),int(snapshot.size()),&generation)){std::copy_n(snapshot.begin(),25,result.begin());std::copy_n(snapshot.begin()+25,25,alternate.begin());}return result;
+}
 }
 void D3D12TextureCache::Dwg2RecognizeAtlas(D3D12Texture& texture) {
   texture.dwg2_atlas_kind=0;texture.dwg2_prompt_style=1;texture.dwg2_original.clear();
@@ -78,12 +84,19 @@ void D3D12TextureCache::Dwg2ApplyAtlas(D3D12Texture& texture) {
   if(texture.dwg2_original.empty())return;
   const bool controller=texture.dwg2_atlas_kind==5;
   const int style=controller?Dwg2ControllerStyle():Dwg2PromptStyle();
-  if(style==texture.dwg2_prompt_style)return;
+  uint32_t generation=Dwg2InputGeneration();
+  if(style==texture.dwg2_prompt_style&&(style!=3||generation==texture.dwg2_input_generation))return;
   const auto key=texture.key();const uint32_t width=key.GetWidth(),height=key.GetHeight();
   auto pixels=texture.dwg2_original;
   if(style==2) {
     if(controller)pixels=dwg2::art::Controller();
     else if(!dwg2::atlas::PlayStation(pixels,width,height,texture.dwg2_atlas_kind))return;
+  }
+  if(style==3) {
+    dwg2::keyboard::Bindings alternate{};const auto bindings=Dwg2KeyboardBindings(generation,alternate);
+    if(controller)pixels=dwg2::keyboard::Bc3(dwg2::keyboard::Diagram(bindings,alternate),512,256);
+    else if(!dwg2::keyboard::Prompts(pixels,width,height,texture.dwg2_atlas_kind,bindings,alternate))return;
+    if(pixels.size()!=texture.dwg2_original.size())return;
   }
   // These qualified atlases have power-of-two widths >= 512, so each row is
   // already aligned to D3D12's 256-byte texture-copy pitch requirement.
@@ -102,4 +115,5 @@ void D3D12TextureCache::Dwg2ApplyAtlas(D3D12Texture& texture) {
   dest.pResource=texture.resource();dest.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
   command_processor_.GetDeferredCommandList().D3DCopyTextureRegion(&dest,0,0,0,&source,nullptr);
   texture.MarkAsUsed();texture.dwg2_prompt_style=style;
+  texture.dwg2_input_generation=generation;
 }

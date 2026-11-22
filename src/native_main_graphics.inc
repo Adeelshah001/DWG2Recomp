@@ -20,7 +20,7 @@ extern "C" void sub_82168370(PPCContext& ctx,uint8_t* base) {
   Dwg2MenuCall(__imp__sub_8212AE38,ctx,base,owner+24);
   Dwg2MenuCall(__imp__sub_821B4B08,ctx,base,state.model);
   if(pressed&cancel)state.active=false;
-  else {Dwg2MenuCall(__imp__sub_82145078,ctx,base,state.model+1737,4,0);if(!(repeat&3)&&(pressed&12))Dwg2GraphicsAdjust(state.model,base,(pressed&8)?1:-1);}
+  else {Dwg2GraphicsNavigateRow(ctx,base,state.model,0);if(!(repeat&3)&&(pressed&12))Dwg2GraphicsAdjust(state.model,base,(pressed&8)?1:-1);}
   Dwg2MainGraphicsModel(ctx,base,owner);ctx.r3.u64=1;return;
  }
  const bool input_ready=std::bit_cast<float>(REX_LOAD_U32(owner+20))<=0&&REX_LOAD_U32(owner+1820)==5&&!(REX_LOAD_U32(0x826DAE90)&0x80000000u);

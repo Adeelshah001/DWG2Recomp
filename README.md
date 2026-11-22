@@ -5,7 +5,7 @@
   <img src="assets/logo.png" alt="Dynasty Warriors: Gundam 2" width="400">
 </p>
 <p align="center">A Windows PC recompilation of Dynasty Warriors: Gundam 2.</p>
-<p align="center"><a href="https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.7.4-alpha"><strong>Download v0.7.4 Alpha</strong></a></p>
+<p align="center"><a href="https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.8.1-alpha"><strong>Download v0.8.1 Alpha</strong></a></p>
 
 ## Features
 
@@ -59,7 +59,7 @@ No game files are included. No separate developer tools or SDK installation is r
 
 ## Quick start
 
-1. Download **DWG2Recomp.zip** from [v0.7.4 Alpha](https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.7.4-alpha).
+1. Download **DWG2Recomp.zip** from [v0.8.1 Alpha](https://github.com/Adeelshah001/DWG2Recomp/releases/tag/v0.8.1-alpha).
 2. Extract the entire ZIP into a writable folder. Keep its contents together.
 3. Optionally put your supported USA Xbox 360 ISO in the **game** folder, then run **DWG2R.exe**. If no supported ISO is found there, setup asks you to choose it.
 4. Allow the first-time import and preparation to finish. Later launches reuse the prepared game.

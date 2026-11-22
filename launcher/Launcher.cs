@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 
 internal static class Launcher {
-    internal const string Version = "0.8-alpha";
+    internal const string Version = "0.8.1-alpha";
     internal const string XexHash = "0be3f2e797a31df5d2a231635e4dc5520da36d4b9dbc7b995cf1bd3b0fedb86b";
     internal static readonly string Root = AppDomain.CurrentDomain.BaseDirectory;
     internal static string ResolvedVersion {
@@ -88,8 +88,8 @@ internal static class Launcher {
     }
     internal static string Arguments() {
         string id = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" + Process.GetCurrentProcess().Id;
-        int preference = Scale(),n=preference==15?1:preference;
-        int width=preference==15?1920:1280*n,height=preference==15?1080:720*n;
+        int n = Scale();
+        int width = 1280 * n, height = 720 * n;
         string logLevel = PlayerSettings.GetString(Root,"logging","level","info");
         return "--game_data_root=" + Quote(Game) + " --user_data_root=" + Quote(Path.Combine(Root,"user-data"))
             + " --cache_root=" + Quote(Path.Combine(Root,"cache"))

@@ -21,16 +21,17 @@
      if (!texture_cache->Initialize()) {
        return nullptr;
      }
-@@ -244,6 +247,8 @@
+@@ -244,6 +247,9 @@
        bool operator!=(const SRVDescriptorKey& other_key) const { return !(*this == other_key); }
      };
  
 +    int dwg2_atlas_kind=0,dwg2_prompt_style=1;
++    uint32_t dwg2_input_generation=0;
 +    std::vector<uint8_t> dwg2_original;
      ID3D12Resource* GetOrCreate3DAs2DResource(D3D12_RESOURCE_STATES end_state);
  
      explicit D3D12Texture(D3D12TextureCache& texture_cache, const TextureKey& key,
-@@ -279,6 +284,31 @@
+@@ -279,6 +285,31 @@
      // For bindless - indices in the global shader-visible descriptor heap.
      std::unordered_map<SRVDescriptorKey, uint32_t, SRVDescriptorKey::Hasher> srv_descriptors_;
    };
@@ -62,7 +63,7 @@
  
    static constexpr uint32_t kSRVDescriptorCachePageSize = 65536;
  
-@@ -352,7 +382,7 @@
+@@ -352,7 +383,7 @@
    explicit D3D12TextureCache(const RegisterFile& register_file, D3D12SharedMemory& shared_memory,
                               uint32_t draw_resolution_scale_x, uint32_t draw_resolution_scale_y,
                               D3D12CommandProcessor& command_processor,
@@ -71,7 +72,7 @@
  
    bool Initialize();
  
-@@ -456,6 +486,24 @@
+@@ -456,6 +487,24 @@
  
    D3D12CommandProcessor& command_processor_;
    bool bindless_resources_used_;

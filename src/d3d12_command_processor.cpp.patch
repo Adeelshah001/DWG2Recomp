@@ -14,10 +14,7 @@
  #include <algorithm>
  #include <cstdarg>
  #include <cstring>
-@@ -46,8 +49,9 @@
--REXCVAR_DEFINE_BOOL(d3d12_submit_on_primary_buffer_end, true, "GPU/D3D12",
-+REXCVAR_DEFINE_BOOL(d3d12_submit_on_primary_buffer_end, false, "GPU/D3D12",
-                     "Submit command list when PM4 primary buffer ends")
+@@ -48,6 +51,7 @@
      .lifecycle(rex::cvar::Lifecycle::kHotReload);
  
  namespace rex::graphics::d3d12 {

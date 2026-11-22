@@ -18,11 +18,11 @@ extern "C" void sub_82130E30(PPCContext& ctx,uint8_t* base) {
 }
 static void Dwg2SettingsOptionsDraw(PPCContext& ctx,uint8_t* base){const auto previous=dwg2_graphics_hint_scope;dwg2_graphics_hint_scope=base[ctx.r4.u32+1736]==5;const auto previous_label=dwg2_graphics_label_selected;dwg2_graphics_label_selected=dwg2_graphics_hint_scope;Dwg2ExpandedOptionsDraw(ctx,base);dwg2_graphics_label_selected=previous_label;dwg2_graphics_hint_scope=previous;}
 static void Dwg2WidgetText(PPCContext& ctx,uint8_t* base,const char* text,int x,int y,unsigned height=28,uint32_t color=0xFFFFFFFFu) {
+ const auto length=std::strlen(text);if(length>127||ctx.r1.u32<2048)return;
  const auto saved=ctx;std::fenv_t environment;std::fegetenv(&environment);
  constexpr uint32_t font=0x826DAEB0u,color_address=font+0x1A844u,width_address=font+0x1A81Au,height_address=font+0x1A81Cu;
  const uint8_t width_hi=base[width_address],width_lo=base[width_address+1];
  const auto old_color=REX_LOAD_U32(color_address);const uint8_t hi=base[height_address],lo=base[height_address+1];
- const auto length=std::strlen(text);if(length>127||ctx.r1.u32<2048)return;
  ctx.r1.u32-=1024;std::memcpy(base+ctx.r1.u32+160,text,length+1);
  REX_STORE_U32(color_address,color);base[width_address]=uint8_t(height>>8);base[width_address+1]=uint8_t(height);base[height_address]=uint8_t(height>>8);base[height_address+1]=uint8_t(height);
  ctx.r3.u32=font;ctx.r4.u32=ctx.r1.u32+160;ctx.f1.f64=x;ctx.f2.f64=y;ctx.r7.u32=1;ctx.r8.u32=1;ctx.r9.u32=1080;ctx.r10.s32=-1;
@@ -30,8 +30,9 @@ static void Dwg2WidgetText(PPCContext& ctx,uint8_t* base,const char* text,int x,
  REX_STORE_U32(color_address,old_color);base[height_address]=hi;base[height_address+1]=lo;base[width_address]=width_hi;base[width_address+1]=width_lo;ctx=saved;std::fesetenv(&environment);
 }
 static void Dwg2WidgetRect(PPCContext& ctx,uint8_t* base,int x,int y,int width,int height,uint32_t rgba) {
+ if(ctx.r1.u32<2048)return;
  const auto saved=ctx;std::fenv_t environment;std::fegetenv(&environment);
- if(ctx.r1.u32<2048)return;ctx.r1.u32-=512;const auto rect=ctx.r1.u32+128,col=rect+16;
+ ctx.r1.u32-=512;const auto rect=ctx.r1.u32+128,col=rect+16;
  REX_STORE_U32(rect,uint32_t(x));REX_STORE_U32(rect+4,uint32_t(y));REX_STORE_U32(rect+8,uint32_t(width));REX_STORE_U32(rect+12,uint32_t(height));REX_STORE_U32(col,rgba);
  ctx.r3.u32=1;__imp__sub_8212DC40(ctx,base);ctx.r1.u32=saved.r1.u32-512;ctx.r3.u32=rect;ctx.r4.u32=col;__imp__sub_8211AA28(ctx,base);
  ctx=saved;std::fesetenv(&environment);
@@ -47,15 +48,42 @@ static void Dwg2WidgetBar(PPCContext& ctx,uint8_t* base,int y,unsigned selected,
 }
 static void Dwg2GraphicsWidgets(PPCContext& ctx,uint8_t* base,uint32_t model) {
  const bool active=REX_LOAD_U32(model+1732)==1;const uint32_t color=active?0xFFFFFFFFu:0xFFFFFFA0u;
- Dwg2WidgetText(ctx,base,Dwg2GraphicsQuery(2)>0?"ON":"OFF",704,388,28,color);
- Dwg2WidgetText(ctx,base,Dwg2GraphicsQuery(4)>0?"ON":"OFF",704,476,28,color);
- const int scale=Dwg2GraphicsQuery(0),fov=Dwg2GraphicsQuery(1);if(scale<1||scale>3||fov<0||fov>100)return;
- char text[80];std::snprintf(text,sizeof(text),"%dx (%d x %dp)",scale,1280*scale,720*scale);
- Dwg2WidgetText(ctx,base,text,704,212,28,color);Dwg2WidgetBar(ctx,base,252,unsigned(scale-1),2,active&&base[model+1737]==0);
- Dwg2WidgetText(ctx,base,"1x",704,265,16,color);Dwg2WidgetText(ctx,base,"2x",869,265,16,color);Dwg2WidgetText(ctx,base,"3x",1030,265,16,color);
- if(fov)std::snprintf(text,sizeof(text),"+%d%%",fov);else std::snprintf(text,sizeof(text),"Default");
- Dwg2WidgetText(ctx,base,text,704,300,28,color);Dwg2WidgetBar(ctx,base,340,unsigned(fov/5),20,active&&base[model+1737]==1);
- Dwg2WidgetText(ctx,base,"Default",704,353,16,color);Dwg2WidgetText(ctx,base,"+50% (Rec.)",845,353,16,color);Dwg2WidgetText(ctx,base,"+100%",988,353,16,color);
+ const int scroll=int(base[model+1738]);
+ auto slot_y=[scroll](int row)->int{const int slot=row-scroll;return (slot>=0&&slot<5)?212+slot*88:-1;};
+ char text[80];
+ if(const int y=slot_y(0);y>=0) {
+  const int scale=Dwg2GraphicsQuery(0);
+  if(scale>=1&&scale<=3) {
+   std::snprintf(text,sizeof(text),"%dx (%d x %dp)",scale,1280*scale,720*scale);
+   Dwg2WidgetText(ctx,base,text,704,y,28,color);Dwg2WidgetBar(ctx,base,y+40,unsigned(scale-1),2,active&&base[model+1737]==0);
+   Dwg2WidgetText(ctx,base,"1x",704,y+53,16,color);Dwg2WidgetText(ctx,base,"2x",869,y+53,16,color);Dwg2WidgetText(ctx,base,"3x",1030,y+53,16,color);
+  }
+ }
+ if(const int y=slot_y(1);y>=0) {
+  const int fov=Dwg2GraphicsQuery(1);
+  if(fov>=0&&fov<=100) {
+   if(fov)std::snprintf(text,sizeof(text),"+%d%%",fov);else std::snprintf(text,sizeof(text),"Default");
+   Dwg2WidgetText(ctx,base,text,704,y,28,color);Dwg2WidgetBar(ctx,base,y+40,unsigned(fov/5),20,active&&base[model+1737]==1);
+   Dwg2WidgetText(ctx,base,"Default",704,y+53,16,color);Dwg2WidgetText(ctx,base,"+50% (Rec.)",845,y+53,16,color);Dwg2WidgetText(ctx,base,"+100%",988,y+53,16,color);
+  }
+ }
+ if(const int y=slot_y(2);y>=0)Dwg2WidgetText(ctx,base,Dwg2GraphicsQuery(2)>0?"ON":"OFF",704,y,28,color);
+ if(const int y=slot_y(3);y>=0)Dwg2WidgetText(ctx,base,Dwg2GraphicsQuery(4)>0?"ON":"OFF",704,y,28,color);
+ if(const int y=slot_y(4);y>=0) {
+  const int fps=Dwg2GraphicsQuery(5);
+  if(fps>=0){
+   const char* label=fps==0?"Uncapped":fps==120?"120 FPS":"60 FPS";
+   Dwg2WidgetText(ctx,base,label,704,y,28,color);
+   Dwg2WidgetBar(ctx,base,y+40,Dwg2FpsIndex(fps),2,active&&base[model+1737]==4);
+   Dwg2WidgetText(ctx,base,"60",704,y+53,16,color);
+   Dwg2WidgetText(ctx,base,"120",853,y+53,16,color);
+   Dwg2WidgetText(ctx,base,"Max",1015,y+53,16,color);
+  }
+ }
+ if(const int y=slot_y(5);y>=0) {
+  const int fps_counter=Dwg2GraphicsQuery(6);
+  if(fps_counter>=0)Dwg2WidgetText(ctx,base,fps_counter>0?"ON":"OFF",704,y,28,color);
+ }
 }
 extern "C" void sub_82130188(PPCContext& ctx,uint8_t* base) {
  if(dwg2_graphics_render_model&&ctx.r4.s32==488&&ctx.r5.s32==162){const uint32_t alpha=REX_LOAD_U32(dwg2_graphics_render_model+1732)==1?255:160;Dwg2WidgetText(ctx,base,"Settings",488,162,32,0xFFFFFF00u|alpha);return;}
