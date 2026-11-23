@@ -11,20 +11,20 @@
 namespace dwg2::input {
 enum Action { A, B, X, Y, LB, RB, LT, RT, Back, Start, L3, R3,
               Up, Down, Left, Right, LUp, LDown, LLeft, LRight,
-              RUp, RDown, RLeft, RRight, Fullscreen, Count };
+              RUp, RDown, RLeft, RRight, Fullscreen, RecompMenu, Count };
 inline constexpr const wchar_t* names[Count]={L"A / Cross",L"B / Circle",L"X / Square",L"Y / Triangle",
  L"LB / L1",L"RB / R1",L"LT / L2",L"RT / R2",L"Back / Create",L"Start / Options",
  L"Left stick click",L"Right stick click",L"D-pad Up",L"D-pad Down",L"D-pad Left",L"D-pad Right",
  L"Left stick Up",L"Left stick Down",L"Left stick Left",L"Left stick Right",
- L"Right stick Up",L"Right stick Down",L"Right stick Left",L"Right stick Right",L"Fullscreen"};
+ L"Right stick Up",L"Right stick Down",L"Right stick Left",L"Right stick Right",L"Fullscreen",L"Recomp Menu"};
 inline constexpr unsigned short masks[16]={0x1000,0x2000,0x4000,0x8000,0x100,0x200,0,0,
  0x20,0x10,0x40,0x80,1,2,4,8};
 // kind: 0 unbound, 1 keyboard virtual key, 2 SDL gamepad button, 3 SDL axis half.
-struct Binding { int kind=0, code=0, sign=1, mods=0; };
+struct Binding { int kind=0, code=0, sign=1, mods=0; bool operator==(const Binding&) const = default; };
 struct Profile { std::array<Binding,Count> bind{}, alternate{}; int deadzone=0; };
 struct Raw { std::array<bool,256> keys{}; int mods=0; std::array<bool,26> buttons{};
              std::array<float,6> axes{}; };
-struct Output { unsigned short buttons=0; unsigned char lt=0,rt=0; short lx=0,ly=0,rx=0,ry=0; bool fullscreen=false; float fullscreen_level=0; };
+struct Output { unsigned short buttons=0; unsigned char lt=0,rt=0; short lx=0,ly=0,rx=0,ry=0; bool fullscreen=false; float fullscreen_level=0; bool recomp_menu=false; float recomp_menu_level=0; };
 inline std::mutex mutex;
 inline std::atomic<bool> editing{false}, pause_pressed{false};
 inline std::atomic<unsigned> generation{1};
@@ -32,7 +32,7 @@ inline Profile Defaults(int type) {
  Profile p;
  if(type==0) {
   const int keys[Count]={32,8,'L','P','1','3','Q','E','Z',13,'F','K',38,40,37,39,
-                        'W','S','A','D',38,40,37,39,13};
+                        'W','S','A','D',38,40,37,39,13,112};
   for(int i=0;i<Count;++i)p.bind[i]={1,keys[i],1,(i>=Up && i<=Right)?1:0};
   p.bind[Fullscreen].mods=4;p.alternate[Fullscreen]={1,122};
   p.alternate[A]={1,186};p.alternate[B]={1,222};p.alternate[LT]={1,'I'};
@@ -46,8 +46,8 @@ inline Profile Defaults(int type) {
    int local=(i-LUp)%4, stick=(i-LUp)/4;
    p.bind[i]={3,stick*2+(local<2?1:0),(local==0 || local==2)?-1:1};
   }
-  p.bind[Fullscreen]={3,4,1}; // LT / L2 is a host shortcut, not a guest trigger.
-  if(type==1)p.alternate[Fullscreen]={2,20}; // Keep touchpad as an alternate.
+  p.bind[RecompMenu]={3,4,1}; // LT / L2 opens Recomp Menu, not guest trigger.
+  if(type==1)p.alternate[RecompMenu]={2,20}; // Keep touchpad as an alternate.
  }
  return p;
 }
@@ -74,14 +74,16 @@ inline float Level(Binding b,const Raw& raw,int deadzone) {
 }
 inline Output Map(const Profile& p,const Raw& raw) {
  Output out;std::array<float,Count> levels{};
- auto same=[](Binding a,Binding b){return a.kind&&a.kind==b.kind&&a.code==b.code&&a.sign==b.sign&&a.mods==b.mods;};
- auto host=[&](Binding b){return same(b,p.bind[Fullscreen])||same(b,p.alternate[Fullscreen]);};
- for(int i=0;i<Count;++i){auto value=[&](Binding b){return i!=Fullscreen&&host(b)?0.f:Level(b,raw,p.deadzone);};levels[i]=std::max(value(p.bind[i]),value(p.alternate[i]));}
+ auto same=[](Binding a,Binding b){return a.kind&&a==b;};
+ auto host=[&](Binding b){return same(b,p.bind[Fullscreen])||same(b,p.alternate[Fullscreen])||same(b,p.bind[RecompMenu])||same(b,p.alternate[RecompMenu]);};
+ for(int i=0;i<Count;++i){auto value=[&](Binding b){return (i!=Fullscreen&&i!=RecompMenu&&host(b))?0.f:Level(b,raw,p.deadzone);};levels[i]=std::max(value(p.bind[i]),value(p.alternate[i]));}
  for(int i=0;i<16;++i)if(levels[i]>.5f)out.buttons|=masks[i];
  out.lt=static_cast<unsigned char>(levels[LT]*255+.5f);out.rt=static_cast<unsigned char>(levels[RT]*255+.5f);
  auto axis=[&](int positive,int negative){return static_cast<short>(std::clamp(levels[positive]-levels[negative],-1.f,1.f)*32767.f);};
  out.lx=axis(LRight,LLeft);out.ly=axis(LUp,LDown);out.rx=axis(RRight,RLeft);out.ry=axis(RUp,RDown);
- out.fullscreen_level=levels[Fullscreen];out.fullscreen=out.fullscreen_level>=.65f;return out;
+ out.fullscreen_level=levels[Fullscreen];out.fullscreen=out.fullscreen_level>=.65f;
+ out.recomp_menu_level=levels[RecompMenu];out.recomp_menu=out.recomp_menu_level>=.65f;
+ return out;
 }
 inline std::string Serialize(const std::array<Profile,3>& data) {
  std::ostringstream out;out<<"DWG2_INPUT 1\n";

@@ -5,8 +5,10 @@
 #include <commctrl.h>
 #include <fstream>
 #include <filesystem>
+#include <map>
 #include <rex/ui/window_sdl.h>
 #include "input_ui.h"
+#include "recomp_menu_state.h"
 #include "build_version.h"
 #include "player_settings.h"
 #include "display_preferences.h"
@@ -34,15 +36,8 @@ extern "C" __declspec(dllexport) int Dwg2GraphicsValue(int key) {
   if(key==6)return dwg2::video::fps_counter.load()?1:0;
   return -1;
 }
-constexpr UINT kPause = 41001, kQuit = 41002, kFullscreen = 41003;
-constexpr UINT kRestart = 41004;
-constexpr UINT kCheckUpdates=41005;
-constexpr UINT kVersion=41006;
-constexpr UINT kFovSlider=41060;
-constexpr UINT kFps60=41071,kFps120=41072,kFpsUncapped=41073,kFpsCounter=41074;
-constexpr UINT kScale1 = 41011, kScale3 = 41013, kHelp = 41020;
+constexpr UINT kScale1 = 41011, kScale3 = 41013;
 inline UINT ScaleCommand(int code) {return kScale1+code-1;}
-inline void CheckScale(HMENU menu,int code) {for(int c:{1,2,3})CheckMenuItem(menu,ScaleCommand(c),MF_BYCOMMAND|(c==code?MF_CHECKED:MF_UNCHECKED));}
 extern "C" __declspec(dllexport) int Dwg2GraphicsRequest(int key,int value) {
   const HWND hwnd=graphics_window.load();if(!hwnd)return 0;
   if(key==0&&(value>=1&&value<=3)) {
@@ -63,14 +58,11 @@ extern "C" __declspec(dllexport) int Dwg2SetBattlePacing(int active, int gpu_vsy
   dwg2::video::battle_paced.store(active != 0);
   return Dwg2SetGpuVsync(gpu_vsync);
 }
-constexpr UINT kConfigure = 41030;
-constexpr UINT kPromptAuto=41040,kPromptXbox=41041,kPromptPlayStation=41042,kHudCorrection=41050;
 constexpr UINT_PTR kNativePump = 0x44574732;
 constexpr UINT_PTR kResolutionTimer = 0x44574733;
 struct State {
   rex::ui::WindowSDL* owner;
   SDL_Window* sdl;
-  HMENU menu;
   int pending_scale = 0;
   bool native_loop = false;
   HWND update_prompt = nullptr;
@@ -81,7 +73,11 @@ struct State {
   bool update_background = false;
   std::string update_previous_background;
   bool update_had_background = false;
-
+  bool prev_kb_menu_toggle = false;
+  std::map<unsigned long long, bool> prev_gp_menu_toggle;
+  int last_gp_family = 2;
+  bool was_menu_open = false;
+  std::string cached_version;
 };
 // Poll the same standardized SDL devices as the game while its launcher prompt
 // owns foreground focus. No guest input mapping or audio state is changed.
@@ -104,71 +100,223 @@ inline void PollUpdatePrompt(State* state) {
 inline const std::filesystem::path& SettingsPath() {
   return dwg2::settings::Path();
 }
-inline UINT FpsCommand(int fps) {
-  return fps==0?kFpsUncapped:(fps==120?kFps120:kFps60);
-}
 inline void Sync(rex::ui::WindowSDL* owner) {
   graphics_fullscreen.store(owner->IsFullscreen()?1:0);
-  HWND hwnd = static_cast<HWND>(owner->GetNativeWindowHandle());
-  auto* s = reinterpret_cast<State*>(GetPropW(hwnd, L"DWG2.Controls"));
-  if (!s) return;
-  HMENU desired = owner->IsFullscreen() ? nullptr : s->menu;
-  if (GetMenu(hwnd) != desired) { SetMenu(hwnd, desired); DrawMenuBar(hwnd); }
-  CheckMenuItem(s->menu, kFullscreen, MF_BYCOMMAND |
-                (owner->IsFullscreen() ? MF_CHECKED : MF_UNCHECKED));
-  CheckMenuRadioItem(s->menu,kPromptAuto,kPromptPlayStation,kPromptAuto+dwg2::prompts::choice.load(),MF_BYCOMMAND);
-  CheckMenuItem(s->menu,kHudCorrection,MF_BYCOMMAND|(dwg2::prompts::hud_correction.load()?MF_CHECKED:MF_UNCHECKED));
-  CheckMenuRadioItem(s->menu,kFps60,kFpsUncapped,FpsCommand(dwg2::video::present_fps.load()),MF_BYCOMMAND);
-  CheckMenuItem(s->menu,kFpsCounter,MF_BYCOMMAND|(dwg2::video::fps_counter.load()?MF_CHECKED:MF_UNCHECKED));
 }
 inline bool SavePrompts(int choice,bool hud) {
  return dwg2::settings::Update(SettingsPath(),{{"prompts/style",std::to_string(choice)},{"prompts/hud_correction",std::to_string(int(hud))}});
 }
-inline void SetFullscreen(State* state,bool value) {
- if(!dwg2::display::SetFullscreen(SettingsPath(),value,[&](bool mode){state->owner->SetFullscreen(mode);Sync(state->owner);}))
-  MessageBoxW(static_cast<HWND>(state->owner->GetNativeWindowHandle()),L"Fullscreen could not be saved. The previous setting is retained.",L"Graphics / Video",MB_ICONERROR);
+inline bool ApplyFullscreen(State* state,bool value,bool show_error=true) {
+ if(dwg2::display::SetFullscreen(SettingsPath(),value,[&](bool mode){state->owner->SetFullscreen(mode);Sync(state->owner);}))return true;
+ if(show_error)MessageBoxW(static_cast<HWND>(state->owner->GetNativeWindowHandle()),L"Fullscreen could not be saved. The previous setting is retained.",L"Graphics / Video",MB_ICONERROR);
+ return false;
 }
-inline void SetPresentFps(HWND hwnd,rex::ui::WindowSDL* owner,int fps) {
-  if(!dwg2::video::ValidFps(fps))return;
+inline void SetFullscreen(State* state,bool value) {
+ ApplyFullscreen(state,value,true);
+}
+inline bool ApplyPresentFps(HWND hwnd,rex::ui::WindowSDL* owner,int fps,bool show_error=true) {
+  if(!dwg2::video::ValidFps(fps))return false;
   if(dwg2::settings::Set("video","presentation_fps",fps)) {
     dwg2::video::present_fps.store(fps);
     dwg2::video::present_fps_initialized.store(true);
     Sync(owner);
     REXLOG_INFO("DWG2 presentation_fps set: {}",fps);
-  } else {
-    MessageBoxW(hwnd,L"The FPS setting could not be saved. The previous value is retained.",L"Frame Rate",MB_ICONERROR);
-    Sync(owner);
+    return true;
   }
+  if(show_error)MessageBoxW(hwnd,L"The FPS setting could not be saved. The previous value is retained.",L"Frame Rate",MB_ICONERROR);
+  Sync(owner);
+  return false;
 }
-inline void SetFpsCounter(HWND hwnd,rex::ui::WindowSDL* owner,bool enabled) {
+inline void SetPresentFps(HWND hwnd,rex::ui::WindowSDL* owner,int fps) {
+  ApplyPresentFps(hwnd,owner,fps,true);
+}
+inline bool ApplyFpsCounter(HWND hwnd,rex::ui::WindowSDL* owner,bool enabled,bool show_error=true) {
   if(dwg2::settings::Set("video","fps_counter",int(enabled))) {
     dwg2::video::fps_counter.store(enabled);
     Sync(owner);
     REXLOG_INFO("DWG2 fps_counter set: {}",enabled);
-  } else {
-    MessageBoxW(hwnd,L"The FPS counter setting could not be saved. The previous value is retained.",L"FPS Counter",MB_ICONERROR);
-    Sync(owner);
+    return true;
   }
+  if(show_error)MessageBoxW(hwnd,L"The FPS counter setting could not be saved. The previous value is retained.",L"FPS Counter",MB_ICONERROR);
+  Sync(owner);
+  return false;
+}
+inline void SetFpsCounter(HWND hwnd,rex::ui::WindowSDL* owner,bool enabled) {
+  ApplyFpsCounter(hwnd,owner,enabled,true);
+}
+inline bool ApplyVsync(HWND hwnd,bool enabled,bool show_error=true) {
+  if(dwg2::settings::Set("video","vsync",int(enabled))){dwg2::video::vsync.store(enabled);return true;}
+  if(show_error)MessageBoxW(hwnd,L"The VSync setting could not be saved. The previous value is retained.",L"Graphics / Video",MB_ICONERROR);
+  return false;
+}
+inline bool ApplyFov(HWND hwnd,int value,bool show_error=true) {
+  if(!dwg2::camera::ValidPercent(value))return false;
+  if(dwg2::camera::SavePreference(SettingsPath(),value)){dwg2::camera::percent.store(value);dwg2::camera::SyncEditor(value);return true;}
+  if(show_error)MessageBoxW(hwnd,L"The FOV setting could not be saved. The previous value is retained.",L"Field of view",MB_ICONERROR);
+  return false;
+}
+inline bool ApplyPrompts(HWND hwnd,rex::ui::WindowSDL* owner,int choice,bool hud,bool show_error=true) {
+  if(choice<0||choice>2)return false;
+  if(!SavePrompts(choice,hud)){if(show_error)MessageBoxW(hwnd,L"Could not save prompt/display settings. Your previous settings are retained.",L"DWG2",MB_ICONERROR);return false;}
+  dwg2::prompts::choice.store(choice);dwg2::prompts::hud_correction.store(hud);Sync(owner);return true;
+}
+inline bool TogglePause(State* s) {
+  const bool paused=!dwg2::pause::Requested();
+  dwg2::pause::Set(paused,rex::chrono::Clock::QueryHostTickCount());
+  Sync(s->owner);
+  REXLOG_INFO("DWG2 explicit runtime pause: {}",paused);
+  return paused;
+}
+inline void RequestResolutionScale(HWND hwnd,State* s,int scale) {
+  if(scale<1||scale>3)return;
+  s->pending_scale=scale;
+  graphics_pending.store(scale);
+  dwg2::resolution::completed.store(0);
+  dwg2::resolution::error.store(0);
+  dwg2::resolution::requested.store(scale);
+  SetTimer(hwnd, kResolutionTimer, 50, nullptr);
+}
+inline std::string RequestRestart(HWND hwnd) {
+  wchar_t name[128]{};
+  DWORD length=GetEnvironmentVariableW(L"DWG2_RESTART_EVENT",name,128);
+  HANDLE event=(length&&length<128)?OpenEventW(EVENT_MODIFY_STATE,FALSE,name):nullptr;
+  if(!event) {
+    return "Start via DWG2R.exe to use Restart.";
+  }
+  BOOL requested=SetEvent(event);
+  if(requested&&!PostMessageW(hwnd,WM_CLOSE,0,0)){ResetEvent(event);requested=FALSE;}
+  CloseHandle(event);
+  if(!requested) {
+    return "Restart could not be requested.";
+  }
+  return {};
+}
+inline std::string RequestCheckUpdates() {
+  wchar_t name[128]{};DWORD length=GetEnvironmentVariableW(L"DWG2_UPDATE_EVENT",name,128);
+  HANDLE event=(length&&length<128)?OpenEventW(EVENT_MODIFY_STATE,FALSE,name):nullptr;
+  if(!event) {
+    return "Start via DWG2R.exe to check for updates.";
+  }
+  const BOOL ok=SetEvent(event);CloseHandle(event);
+  if(!ok) {
+    return "Update request could not be sent.";
+  }
+  return "Checking for updates...";
+}
+inline dwg2::recomp_menu::Actions BuildMenuActions(HWND hwnd,State* s) {
+  dwg2::recomp_menu::Actions act;
+  act.restart=[hwnd]{return RequestRestart(hwnd);};
+  act.toggle_pause=[s]{TogglePause(s);return std::string{};};
+  act.quit_game=[hwnd]{PostMessageW(hwnd,WM_CLOSE,0,0);};
+  act.set_fullscreen=[s](bool v){return ApplyFullscreen(s,v,false)?std::string{}:std::string("Could not save fullscreen setting.");};
+  act.set_resolution=[hwnd,s](int scale){if(graphics_pending.load())return std::string("Resolution change pending.");RequestResolutionScale(hwnd,s,scale);return std::string{};};
+  act.set_fov=[hwnd](int v){return ApplyFov(hwnd,v,false)?std::string{}:std::string("Could not save FOV setting.");};
+  act.set_fps=[hwnd,s](int fps){return ApplyPresentFps(hwnd,s->owner,fps,false)?std::string{}:std::string("Could not save FPS setting.");};
+  act.set_fps_counter=[hwnd,s](bool on){return ApplyFpsCounter(hwnd,s->owner,on,false)?std::string{}:std::string("Could not save FPS counter.");};
+  act.set_vsync=[hwnd](bool on){return ApplyVsync(hwnd,on,false)?std::string{}:std::string("Could not save VSync setting.");};
+  act.set_prompts=[hwnd,s](int c){return ApplyPrompts(hwnd,s->owner,c,dwg2::prompts::hud_correction.load(),false)?std::string{}:std::string("Could not save prompt style.");};
+  act.check_updates=[]{return RequestCheckUpdates();};
+  act.save_controls=[](const std::array<dwg2::input::Profile,3>& p){return dwg2::input::SavePlayerControls(p)?std::string{}:std::string("Could not save settings.ini.");};
+  act.is_paused=[]{return dwg2::pause::Requested();};
+  act.is_fullscreen=[s]{return s->owner->IsFullscreen();};
+  act.resolution=[]{return graphics_scale.load();};
+  act.resolution_pending=[]{return graphics_pending.load();};
+  act.fov=[]{return dwg2::camera::percent.load();};
+  act.fps=[]{return dwg2::video::present_fps.load();};
+  act.fps_counter=[]{return dwg2::video::fps_counter.load();};
+  act.vsync=[]{return dwg2::video::vsync.load();};
+  act.prompt_choice=[]{return dwg2::prompts::choice.load();};
+  act.prompt_style=[]{return dwg2::prompts::Effective();};
+  act.version_text=[s]{return s->cached_version;};
+  return act;
+}
+inline void PollRecompMenu(HWND hwnd,State* s) {
+  if(GetForegroundWindow()!=hwnd||dwg2::input::editing.load()||dwg2::update_modal::Active()) {
+    s->prev_kb_menu_toggle=false;
+    for(auto& kv:s->prev_gp_menu_toggle)kv.second=false;
+    if(s->was_menu_open&&!dwg2::recomp_menu::IsOpen()){s->was_menu_open=false;s->owner->RequestPaint();}
+    return;
+  }
+  dwg2::input::Raw kb_raw;
+  for(int k=8;k<256;++k)kb_raw.keys[k]=(GetAsyncKeyState(k)&0x8000)!=0;
+  kb_raw.mods=(kb_raw.keys[VK_SHIFT]?1:0)|(kb_raw.keys[VK_CONTROL]?2:0)|(kb_raw.keys[VK_MENU]?4:0);
+  const auto kb_prof=dwg2::input::Get(0);
+  const bool kb_toggle=dwg2::input::Level(kb_prof.bind[dwg2::input::RecompMenu],kb_raw,0)>=0.65f||
+                       dwg2::input::Level(kb_prof.alternate[dwg2::input::RecompMenu],kb_raw,0)>=0.65f;
+
+  SDL_UpdateGamepads();
+  int count=0;auto* ids=SDL_GetGamepads(&count);
+  bool has_active_gp=false;
+  dwg2::input::Raw active_gp_raw{};
+  int active_gp_family=s->last_gp_family;
+  unsigned long long active_gp_id=0;
+  bool gp_open_trigger=false;
+  dwg2::input::Raw trigger_gp_raw{};
+  int trigger_gp_family=2;
+  unsigned long long trigger_gp_id=0;
+  if(ids) {
+    for(int i=0;i<count&&i<16;++i) {
+      auto* pad=SDL_OpenGamepad(ids[i]);if(!pad)continue;
+      const auto id=static_cast<unsigned long long>(SDL_GetGamepadID(pad));
+      const int family=dwg2::input::Family(pad);
+      const auto raw=dwg2::input::ReadPad(pad);
+      SDL_CloseGamepad(pad);
+      const auto gp_prof=dwg2::input::Get(family);
+      const bool gp_toggle=dwg2::input::Level(gp_prof.bind[dwg2::input::RecompMenu],raw,gp_prof.deadzone)>=0.65f||
+                           dwg2::input::Level(gp_prof.alternate[dwg2::input::RecompMenu],raw,gp_prof.deadzone)>=0.65f;
+      bool& prev=s->prev_gp_menu_toggle[id];
+      if(gp_toggle&&!prev&&!gp_open_trigger) {
+        gp_open_trigger=true;trigger_gp_raw=raw;trigger_gp_family=family;trigger_gp_id=id;
+      }
+      prev=gp_toggle;
+      bool held=false;
+      for(bool b:raw.buttons)held|=b;
+      for(float a:raw.axes)held|=std::abs(a)>0.25f;
+      if(held&&!has_active_gp) {
+        has_active_gp=true;active_gp_raw=raw;active_gp_family=family;active_gp_id=id;s->last_gp_family=family;
+      }
+    }
+    SDL_free(ids);
+  }
+
+  const bool was_open=dwg2::recomp_menu::IsOpen();
+  if(!was_open) {
+    if(kb_toggle&&!s->prev_kb_menu_toggle) {
+      dwg2::input::ObservePromptDevice(0x100000000ull,3,kb_raw);
+      dwg2::recomp_menu::SetOpen(true,true);
+    } else if(gp_open_trigger) {
+      dwg2::input::ObservePromptDevice(trigger_gp_id,trigger_gp_family==1?2:1,trigger_gp_raw);
+      dwg2::recomp_menu::SetOpen(true,true);
+    }
+  } else {
+    dwg2::input::ObservePromptDevice(0x100000000ull,3,kb_raw);
+    if(has_active_gp)dwg2::input::ObservePromptDevice(active_gp_id,active_gp_family==1?2:1,active_gp_raw);
+    const auto act=BuildMenuActions(hwnd,s);
+    const uint64_t now_ms=GetTickCount64();
+    dwg2::recomp_menu::HandleKeyboard(kb_raw,now_ms,act);
+    if(dwg2::recomp_menu::IsOpen()) {
+      dwg2::recomp_menu::HandleGamepad(has_active_gp?active_gp_raw:dwg2::input::Raw{},s->last_gp_family,now_ms,act);
+    }
+  }
+  s->prev_kb_menu_toggle=kb_toggle;
+  const bool now_open=dwg2::recomp_menu::IsOpen();
+  if(!now_open&&GetCapture()==hwnd)ReleaseCapture();
+  if(now_open||was_open||s->was_menu_open)s->owner->RequestPaint();
+  s->was_menu_open=now_open;
 }
 inline LRESULT CALLBACK Procedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
                                    UINT_PTR id, DWORD_PTR data) {
   auto* s = reinterpret_cast<State*>(data);
   if(msg==WM_APP+0x213) {
-    const int value=int(wp);
-    if(dwg2::camera::ValidPercent(value)) {
-      if(dwg2::camera::SavePreference(SettingsPath(),value)){dwg2::camera::percent.store(value);dwg2::camera::SyncEditor(value);}
-      else MessageBoxW(hwnd,L"The FOV setting could not be saved. The previous value is retained.",L"Field of view",MB_ICONERROR);
-    }
+    ApplyFov(hwnd,int(wp),true);
     return 0;
   }
   if(msg==WM_APP+0x214) {
     if(wp<=1){SetFullscreen(s,wp!=0);}return 0;
   }
   if(msg==WM_APP+0x215) {
-    if(wp<=1){
-      if(dwg2::settings::Set("video","vsync",int(wp)))dwg2::video::vsync.store(wp!=0);
-      else MessageBoxW(hwnd,L"The VSync setting could not be saved. The previous value is retained.",L"Graphics / Video",MB_ICONERROR);
-    }return 0;
+    if(wp<=1)ApplyVsync(hwnd,wp!=0,true);
+    return 0;
   }
   if(msg==WM_APP+0x216) {
     SetPresentFps(hwnd,s->owner,int(wp));
@@ -178,88 +326,49 @@ inline LRESULT CALLBACK Procedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
     if(wp<=1)SetFpsCounter(hwnd,s->owner,wp!=0);
     return 0;
   }
+  if(msg==WM_APP+0x218) {
+    dwg2::recomp_menu::Toggle();
+    s->owner->RequestPaint();
+    return 0;
+  }
+  if(msg==WM_APP+0x219) {
+    if(wp<=2){ApplyPrompts(hwnd,s->owner,int(wp),dwg2::prompts::hud_correction.load(),false);s->owner->RequestPaint();}
+    return 0;
+  }
+  if(msg==WM_APP+0x21A) {
+    TogglePause(s);
+    s->owner->RequestPaint();
+    return 0;
+  }
+  if(msg==WM_SIZE)dwg2::recomp_menu::InvalidateHitRects();
+  if(msg==WM_CAPTURECHANGED)dwg2::recomp_menu::HandleMouseUp();
+  if(dwg2::recomp_menu::IsOpen()&&(msg==WM_MOUSEMOVE||msg==WM_LBUTTONDOWN||msg==WM_LBUTTONUP||msg==WM_MOUSEWHEEL)) {
+    if(msg==WM_MOUSEWHEEL) {
+      dwg2::recomp_menu::HandleMouseWheel(float(static_cast<short>(HIWORD(wp)))/120.0f);
+      s->owner->RequestPaint();
+      return 0;
+    }
+    RECT rc{};GetClientRect(hwnd,&rc);
+    float vx=0.f,vy=0.f;
+    dwg2::recomp_menu::ScreenToVirtual(float(static_cast<short>(LOWORD(lp))),float(static_cast<short>(HIWORD(lp))),float(rc.right-rc.left),float(rc.bottom-rc.top),vx,vy);
+    if(msg==WM_MOUSEMOVE)dwg2::recomp_menu::HandleMouseMove(vx,vy,BuildMenuActions(hwnd,s));
+    else if(msg==WM_LBUTTONDOWN) {
+      if (rc.right > 1 && rc.bottom > 1 &&
+          dwg2::recomp_menu::HandleMouseDown(vx,vy,BuildMenuActions(hwnd,s),GetTickCount64()) &&
+          dwg2::recomp_menu::IsOpen()) SetCapture(hwnd);
+    }
+    else{if(GetCapture()==hwnd)ReleaseCapture();dwg2::recomp_menu::HandleMouseUp();}
+    if(!dwg2::recomp_menu::IsOpen()&&GetCapture()==hwnd)ReleaseCapture();
+    s->owner->RequestPaint();
+    return 0;
+  }
   if (msg == WM_APP + 0x212) {
     SetFullscreen(s,!s->owner->IsFullscreen()); return 0;
   }
   if (msg == WM_COMMAND && HIWORD(wp) == 0) {
-    UINT command = LOWORD(wp);
-    if(command==kFovSlider) {dwg2::camera::ShowEditor(hwnd,SettingsPath());return 0;}
-    if(command>=kFps60&&command<=kFpsUncapped) {
-      const int fps=command==kFps60?60:(command==kFps120?120:0);
-      SetPresentFps(hwnd,s->owner,fps);
-      return 0;
-    }
-    if(command==kFpsCounter) {
-      SetFpsCounter(hwnd,s->owner,!dwg2::video::fps_counter.load());
-      return 0;
-    }
-    if((command>=kPromptAuto&&command<=kPromptPlayStation)||command==kHudCorrection) {
-      int choice=command==kHudCorrection?dwg2::prompts::choice.load():int(command-kPromptAuto);
-      bool hud=dwg2::prompts::hud_correction.load();if(command==kHudCorrection)hud=!hud;
-      if(!SavePrompts(choice,hud))MessageBoxW(hwnd,L"Could not save prompt/display settings. Your previous settings are retained.",L"DWG2",MB_ICONERROR);
-      else {dwg2::prompts::choice.store(choice);dwg2::prompts::hud_correction.store(hud);Sync(s->owner);}
-      return 0;
-    }
-    if (command == kConfigure) { dwg2::input::ShowEditor(hwnd); return 0; }
-    if (command == kFullscreen) {
-      SetFullscreen(s,!s->owner->IsFullscreen()); return 0;
-    }
-    if (command == kPause) {
-      const bool paused=!dwg2::pause::Requested();
-      dwg2::pause::Set(paused,rex::chrono::Clock::QueryHostTickCount());
-      ModifyMenuW(s->menu,kPause,MF_BYCOMMAND|MF_STRING,kPause,paused?L"&Resume Game":L"&Pause Game");
-      REXLOG_INFO("DWG2 explicit runtime pause: {}",paused);
-      return 0;
-    }
-    if (command == kQuit) { PostMessageW(hwnd, WM_CLOSE, 0, 0); return 0; }
-    if (command == kRestart) {
-      wchar_t name[128]{};
-      DWORD length=GetEnvironmentVariableW(L"DWG2_RESTART_EVENT",name,128);
-      HANDLE event=(length&&length<128)?OpenEventW(EVENT_MODIFY_STATE,FALSE,name):nullptr;
-      if(!event) {
-        MessageBoxW(hwnd,L"Start the game with DWG2R.exe to use Restart.",L"Restart",MB_ICONINFORMATION);
-        return 0;
-      }
-      BOOL requested=SetEvent(event);
-      if(requested&&!PostMessageW(hwnd,WM_CLOSE,0,0)){ResetEvent(event);requested=FALSE;}
-      CloseHandle(event);
-      if(!requested)MessageBoxW(hwnd,L"Restart could not be requested. Your game is still running.",L"Restart",MB_ICONERROR);
-      return 0;
-    }
+    const UINT command = LOWORD(wp);
     if (command >= kScale1 && command <= kScale3) {
-      int scale = int(command - kScale1 + 1);
-      s->pending_scale=scale;
-      graphics_pending.store(scale);
-      dwg2::resolution::completed.store(0);
-      dwg2::resolution::error.store(0);
-      dwg2::resolution::requested.store(scale);
-      SetTimer(hwnd, kResolutionTimer, 50, nullptr);
-      return 0;
-    }
-    if(command==kCheckUpdates) {
-      wchar_t name[128]{};DWORD length=GetEnvironmentVariableW(L"DWG2_UPDATE_EVENT",name,128);
-      HANDLE event=(length&&length<128)?OpenEventW(EVENT_MODIFY_STATE,FALSE,name):nullptr;
-      if(event){const BOOL ok=SetEvent(event);CloseHandle(event);if(!ok)MessageBoxW(hwnd,L"The update request could not be sent. You can continue playing.",L"Updates",MB_ICONINFORMATION);}
-      else MessageBoxW(hwnd,L"Start the game with DWG2R.exe to check for updates.",L"Updates",MB_ICONINFORMATION);
-      return 0;
-    }
-    if (command == kHelp) {
-      MessageBoxW(hwnd,
-        L"Dynasty Warriors: Gundam 2 Recomp\n\n"
-        L"Controls > Configure: keyboard, PS5 and Xbox remapping.\n"
-        L"Controls > Button Prompts: Auto, Xbox or PlayStation icons.\n"
-        L"View > HUD seam correction: toggle atlas-only sampling correction.\n"
-        L"Fullscreen: L2 / LT, PS5 touchpad, F11, Alt+Enter, or View > Fullscreen.\n"
-        L"File > Pause Game freezes guest execution; Resume Game continues it.\n"
-        L"File > Restart starts a fresh game process through the launcher.\n"
-        L"FOV on the menu bar: live slider from Default to +100%, in 5% steps (+50% recommended).\n"
-        L"FPS on the menu bar: 60 FPS, 120 FPS, Uncapped (temporary interpolation placeholders), or Show FPS Counter.\n"
-        L"View > Resolution changes internal rendering and output live.\n"
-        L"1x: 1280 x 720; 2x: 2560 x 1440; 3x: 3840 x 2160.\n"
-        L"A resolution change may briefly rebuild GPU resources.\n"
-        L"Save from the game's menu before restarting or quitting.\n"
-        L"Keyboard and controller work together. Startup movies are skipped.",
-        L"Help", MB_OK | MB_ICONINFORMATION);
+      RequestResolutionScale(hwnd,s,int(command - kScale1 + 1));
       return 0;
     }
   }
@@ -284,23 +393,23 @@ inline LRESULT CALLBACK Procedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
         SDL_RestoreWindow(s->sdl);
         SDL_SetWindowSize(s->sdl,dwg2::resolution::Width(scale),dwg2::resolution::Height(scale));
       }
-      CheckScale(s->menu,scale);
       return 0;
   }
-  if(msg==WM_ENTERMENULOOP || msg==WM_ENTERSIZEMOVE)s->native_loop=true;
-  if(msg==WM_EXITMENULOOP || msg==WM_EXITSIZEMOVE)s->native_loop=false;
+  if(msg==WM_ENTERSIZEMOVE)s->native_loop=true;
+  if(msg==WM_EXITSIZEMOVE)s->native_loop=false;
   if(msg==WM_TIMER && wp==kNativePump) {
     PollUpdatePrompt(s);
+    PollRecompMenu(hwnd,s);
     if(s->native_loop)
       static_cast<rex::ui::SDLWindowedAppContext&>(s->owner->app_context()).PumpNativeLoop();
     return 0;
   }
-  // Keep presentation and deferred work moving inside native menu/dialog loops.
   if(msg==WM_CLOSE)dwg2::pause::Shutdown(rex::chrono::Clock::QueryHostTickCount());
   if (msg == WM_SYSKEYDOWN && wp == VK_RETURN && !(lp & (1LL << 30))) {
     SetFullscreen(s,!s->owner->IsFullscreen()); return 0;
   }
   if (msg == WM_NCDESTROY) {
+    dwg2::recomp_menu::SetOpen(false);
     graphics_window.store(nullptr);graphics_pending.store(0);
     if(s->update_background)SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS,s->update_had_background?s->update_previous_background.c_str():nullptr);
     KillTimer(hwnd, kNativePump);
@@ -310,8 +419,6 @@ inline LRESULT CALLBACK Procedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
     if(dwg2::camera::editor)DestroyWindow(dwg2::camera::editor);
     RemovePropW(hwnd, L"DWG2.Controls");
     RemoveWindowSubclass(hwnd, Procedure, id);
-    SetMenu(hwnd, nullptr);
-    DestroyMenu(s->menu);
     delete s;
   }
   return DefSubclassProc(hwnd, msg, wp, lp);
@@ -319,47 +426,16 @@ inline LRESULT CALLBACK Procedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
 inline void Install(rex::ui::WindowSDL* owner, SDL_Window* sdl) {
   HWND hwnd = static_cast<HWND>(owner->GetNativeWindowHandle());
   if (!hwnd || GetPropW(hwnd, L"DWG2.Controls")) return;
-  HMENU menu = CreateMenu(), file = CreatePopupMenu(), view = CreatePopupMenu();
-  HMENU sizes = CreatePopupMenu(), fps = CreatePopupMenu(), help = CreatePopupMenu(), controls = CreatePopupMenu(), prompts=CreatePopupMenu();
-  AppendMenuW(file, MF_STRING, kPause, L"&Pause Game");
-  AppendMenuW(file, MF_STRING, kRestart, L"&Restart");
-  AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
-  AppendMenuW(file, MF_STRING, kQuit, L"&Quit Game");
-  AppendMenuW(view, MF_STRING, kFullscreen, L"&Fullscreen\tF11 / Alt+Enter");
-  AppendMenuW(sizes, MF_STRING, kScale1, L"&1x - 1280 x 720");
-  AppendMenuW(sizes, MF_STRING, kScale1+1, L"&2x - 2560 x 1440");
-  AppendMenuW(sizes, MF_STRING, kScale3, L"&3x - 3840 x 2160");
-  AppendMenuW(view, MF_POPUP, reinterpret_cast<UINT_PTR>(sizes), L"&Resolution");
-  AppendMenuW(view,MF_STRING,kHudCorrection,L"HUD seam correction");
-  AppendMenuW(fps, MF_STRING, kFps60, L"&60 FPS");
-  AppendMenuW(fps, MF_STRING, kFps120, L"&120 FPS");
-  AppendMenuW(fps, MF_STRING, kFpsUncapped, L"&Uncapped");
-  AppendMenuW(fps, MF_SEPARATOR, 0, nullptr);
-  AppendMenuW(fps, MF_STRING, kFpsCounter, L"Show FPS &Counter");
-  AppendMenuW(controls,MF_STRING,kConfigure,L"&Configure Controller / Keyboard...");
-  AppendMenuW(prompts,MF_STRING,kPromptAuto,L"&Auto");
-  AppendMenuW(prompts,MF_STRING,kPromptXbox,L"&Xbox");
-  AppendMenuW(prompts,MF_STRING,kPromptPlayStation,L"&PlayStation");
-  AppendMenuW(controls,MF_POPUP,reinterpret_cast<UINT_PTR>(prompts),L"Button &Prompts");
-  dwg2::build_version::Append(help,kVersion,dwg2::build_version::Root());
-  AppendMenuW(help,MF_SEPARATOR,0,nullptr);
-  AppendMenuW(help,MF_STRING,kCheckUpdates,L"Check for &Updates...");
-  AppendMenuW(help, MF_STRING, kHelp, L"&Controls and About");
-  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(file), L"&File");
-  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(view), L"&View");
-  AppendMenuW(menu, MF_STRING, kFovSlider, L"F&OV");
-  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(fps), L"F&PS");
-  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(controls), L"&Controls");
-  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(help), L"&Help");
-  auto* s = new State{owner, sdl, menu};
+  auto* s = new State{};
+  s->owner = owner;
+  s->sdl = sdl;
+  {const auto wver=dwg2::build_version::Read(dwg2::build_version::Root());for(wchar_t c:wver)s->cached_version.push_back((c>=0x20&&c<=0x7E)?char(c):'?');}
   {wchar_t text[32]{};if(GetEnvironmentVariableW(L"DWG2_LAUNCHER_PID",text,32))s->launcher_pid=wcstoul(text,nullptr,10);}
   if (!SetPropW(hwnd, L"DWG2.Controls", s) || !SetWindowSubclass(hwnd, Procedure, 0x44574732, reinterpret_cast<DWORD_PTR>(s))) {
-    RemovePropW(hwnd, L"DWG2.Controls"); DestroyMenu(menu); delete s; return;
+    RemovePropW(hwnd, L"DWG2.Controls"); delete s; return;
   }
   SetTimer(hwnd,kNativePump,8,nullptr);
   graphics_window.store(hwnd);
-  RECT client{};
-  GetClientRect(hwnd, &client);
   dwg2::settings::Document preferences;
   if(!dwg2::settings::Read(SettingsPath(),preferences))MessageBoxW(hwnd,L"settings.ini could not be read. Defaults remain active; the file was preserved.",L"Settings",MB_ICONWARNING);
   owner->SetFullscreen(dwg2::display::Fullscreen(preferences)!=0);
@@ -374,18 +450,9 @@ inline void Install(rex::ui::WindowSDL* owner, SDL_Window* sdl) {
   dwg2::prompts::choice.store(dwg2::settings::Integer(preferences,"prompts","style",0,0,2));
   dwg2::prompts::hud_correction.store(dwg2::settings::Integer(preferences,"prompts","hud_correction",1,0,1)!=0);
   Sync(owner);
-  {int scale=dwg2::settings::Integer(preferences,"graphics","resolution_scale",1,1,3);if(scale<1||scale>3)scale=1;graphics_scale.store(scale);CheckScale(menu,scale);}
+  {int scale=dwg2::settings::Integer(preferences,"graphics","resolution_scale",1,1,3);if(scale<1||scale>3)scale=1;graphics_scale.store(scale);}
   if(!dwg2::input::Load())MessageBoxW(hwnd,L"settings.ini could not be read. Default mappings are active; the file is preserved until you save new mappings.",L"Controls",MB_ICONWARNING);
   REXLOG_INFO("DWG2 settings.ini loaded: scale={} fov={} vsync={} fps={} fps_counter={} prompts={} hud_correction={}",graphics_scale.load(),dwg2::camera::percent.load(),dwg2::video::vsync.load(),dwg2::video::present_fps.load(),dwg2::video::fps_counter.load(),dwg2::prompts::choice.load(),dwg2::prompts::hud_correction.load());
-  if (!owner->IsFullscreen()) {
-    // Attaching a native menu consumes client height unless the frame grows.
-    RECT frame{0, 0, client.right, client.bottom};
-    AdjustWindowRectExForDpi(&frame, static_cast<DWORD>(GetWindowLongPtrW(hwnd, GWL_STYLE)),
-                            TRUE, static_cast<DWORD>(GetWindowLongPtrW(hwnd, GWL_EXSTYLE)),
-                            GetDpiForWindow(hwnd));
-    SetWindowPos(hwnd, nullptr, 0, 0, frame.right-frame.left, frame.bottom-frame.top,
-                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
-  }
 }
 }  // namespace dwg2::controls
 #endif

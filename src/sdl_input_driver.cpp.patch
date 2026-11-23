@@ -14,7 +14,8 @@
    std::memcpy(out_state, &controller->state, sizeof(*out_state));
 +  dwg2::input::Pad(controller->sdl, out_state->gamepad, static_cast<HWND>(attached_window_->GetNativeWindowHandle()), is_active);
 +  out_state->packet_number += dwg2::input::generation.load();
-   if (!is_active) {
+-  if (!is_active) {
++  if (!is_active || dwg2::recomp_menu::IsOpen()) {
      // Simulate an "untouched" controller. When we become active again the
      // pressed buttons aren't lost and will be visible again.
 @@ -298,7 +301,7 @@
@@ -22,7 +23,7 @@
    };
  
 -  auto is_active = this->is_active();
-+  auto is_active = this->is_active() && !dwg2::input::editing.load();
++  auto is_active = this->is_active() && !dwg2::input::editing.load() && !dwg2::recomp_menu::IsOpen();
  
    if (is_active) {
      QueueControllerUpdate();

@@ -4,6 +4,7 @@
 #include "update_input_gate.h"
 #include "player_control_settings.h"
 #include "prompt_control.h"
+#include "recomp_menu_state.h"
 #include <windows.h>
 #include <SDL3/SDL.h>
 #include <filesystem>
@@ -51,11 +52,11 @@ inline bool Gate(unsigned long long device,bool held) {
  std::lock_guard lock(edges_mutex);auto& gate=release_gates[device];const auto current=generation.load();
  if(gate.generation && gate.generation!=current)gate.wait=true;
  gate.generation=current;
- return dwg2::update_modal::GateUntilReleased(editing.load()||dwg2::update_modal::Active(),held,gate.wait);
+ return dwg2::update_modal::GateUntilReleased(editing.load()||dwg2::update_modal::Active()||dwg2::recomp_menu::IsOpen(),held,gate.wait);
 }
 inline void Shortcut(unsigned long long device,float level,HWND game) {
  std::lock_guard lock(edges_mutex);bool& previous=fullscreen_edges[device];
- if(FullscreenEdge(level,previous) && !editing.load() && game && GetForegroundWindow()==game)
+ if(FullscreenEdge(level,previous) && !editing.load() && !dwg2::recomp_menu::IsOpen() && game && GetForegroundWindow()==game)
   PostMessageW(game,WM_APP+0x212,0,0);
 
 }
@@ -65,9 +66,9 @@ template<class Gamepad> inline void Pad(SDL_Gamepad* device,Gamepad& out,HWND wi
  if(SDL_GamepadConnected(device)) {
   auto raw=ReadPad(device);bool held=false;for(bool button:raw.buttons)held|=button;
   for(float axis:raw.axes)held|=std::abs(axis)>.25f;
+  if(active)ObservePromptDevice(id,Family(device)==1?2:1,raw);
   if(!Gate(id,held) && active) {
    result=Map(Get(Family(device)),raw);
-   ObservePromptDevice(id,Family(device)==1?2:1,raw);
   }
  }
  Write(result,out);Shortcut(id,result.fullscreen_level,window);
@@ -76,10 +77,9 @@ template<class Gamepad> inline void Keyboard(const bool (&keys)[256],Gamepad& ou
  Raw raw;std::copy(std::begin(keys),std::end(keys),raw.keys.begin());
  raw.mods=(keys[16]?1:0)|(keys[17]?2:0)|(keys[18]?4:0);
  bool held=false;for(bool key:raw.keys)held|=key;
+ ObservePromptDevice(0x100000000ull,3,raw);
  const bool blocked=Gate(0x100000000ull,held);
- Output result;if(!blocked) {
-  result=Map(Get(0),raw);ObservePromptDevice(0x100000000ull,3,raw);
- }
+ Output result;if(!blocked)result=Map(Get(0),raw);
  if(pause_pressed.load() && !blocked)result.buttons|=0x10;
  Write(result,out);Shortcut(0x100000000ull,(raw.keys[13]&&(raw.mods&4))?0.f:result.fullscreen_level,window);
 }

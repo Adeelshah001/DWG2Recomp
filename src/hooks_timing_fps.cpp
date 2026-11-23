@@ -11,8 +11,11 @@
 #include <windows.h>
 #include <mmsystem.h>
 
+#include <rex/chrono/clock.h>
 #include "fixed60.h"
 #include "video_control.h"
+
+extern "C" __declspec(dllimport) uint64_t Dwg2PauseActiveTicks();
 
 REX_EXTERN(__imp__sub_82119380);
 REX_EXTERN(__imp__sub_82545F60);
@@ -42,7 +45,13 @@ std::atomic<unsigned> battle_ticks{0}, battle_draws{0};
 thread_local BattleClock::duration outer_swap_gpu_wait{};
 thread_local unsigned outer_swap_poll_count = 0;
 thread_local dwg2::timing::Fixed60 battle_clock;
-thread_local BattleClock::time_point battle_sample_time{};
+thread_local uint64_t battle_sample_ticks{};
+
+std::chrono::nanoseconds BattleElapsed(uint64_t active_ticks) {
+  static const double tick_frequency = double(rex::chrono::Clock::QueryHostTickFrequency());
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::duration<double>(double(active_ticks - battle_sample_ticks) / tick_frequency));
+}
 
 struct BattleViewSample {
   uint32_t view{};
@@ -306,7 +315,6 @@ REX_HOOK_RAW(sub_82545F60) {
 
 REX_HOOK_RAW(sub_82119380) {
   static const bool enabled = Dwg2EnvEnabled(L"DWG2_EXPERIMENTAL_FIXED_BATTLE", true);
-  const auto now = BattleClock::now();
   if (!enabled || ctx.lr != 0x821107A8 || ctx.r3.u32 != battle_manager || !BattleCanStep(base)) {
     measure_battle_swap = false;
     battle_swap_unlock.store(false, std::memory_order_relaxed);
@@ -314,18 +322,17 @@ REX_HOOK_RAW(sub_82119380) {
     previous_battle_view = current_battle_view = {};
     view_camera_overridden = false;
     battle_clock.reset();
-    battle_sample_time = {};
+    battle_sample_ticks = 0;
     __imp__sub_82119380(ctx, base);
     return;
   }
   measure_battle_swap = true;
   battle_swap_unlock.store(true, std::memory_order_relaxed);
   SyncBattlePacing(true);
-  const auto elapsed =
-      battle_sample_time == BattleClock::time_point{}
-          ? std::chrono::nanoseconds(16'666'667)
-          : std::chrono::duration_cast<std::chrono::nanoseconds>(now - battle_sample_time);
-  battle_sample_time = now;
+  const uint64_t active_ticks = Dwg2PauseActiveTicks();
+  const auto elapsed = battle_sample_ticks ? BattleElapsed(active_ticks)
+                                           : std::chrono::nanoseconds(16'666'667);
+  battle_sample_ticks = active_ticks;
   const auto plan = battle_clock.advance(elapsed);
   if (plan.discarded_ticks) {
     REXLOG_WARN("DWG2 fixed battle: dropped {} catch-up ticks", plan.discarded_ticks);
@@ -352,7 +359,7 @@ REX_HOOK_RAW(sub_82119380) {
       previous_battle_view = current_battle_view = {};
       view_camera_overridden = false;
       battle_clock.reset();
-      battle_sample_time = {};
+      battle_sample_ticks = 0;
       break;
     }
     CaptureBattleView(base);
@@ -379,8 +386,7 @@ REX_HOOK_RAW(sub_82225298) {
   }
 
   static const bool interpolate = Dwg2EnvEnabled(L"DWG2_EXPERIMENTAL_CAMERA_INTERPOLATION", true);
-  const auto battle_render_alpha = battle_clock.render_alpha(
-      std::chrono::duration_cast<std::chrono::nanoseconds>(BattleClock::now() - battle_sample_time));
+  const auto battle_render_alpha = battle_clock.render_alpha(BattleElapsed(Dwg2PauseActiveTicks()));
   const bool same_projection = previous_battle_view.projection == current_battle_view.projection;
   const bool product_matches = current_battle_view.pose_product_matches;
   auto pose = current_battle_view.pose;

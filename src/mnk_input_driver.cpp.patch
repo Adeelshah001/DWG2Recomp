@@ -8,7 +8,16 @@
  #include <rex/input/mnk/mnk_input_driver.h>
  
  #include <rex/cvar.h>
-@@ -273,6 +274,15 @@
+@@ -262,7 +263,7 @@
+   // Mouse look is opt in. Without this gate, keyboard input alone would hide
+   // and lock the cursor, breaking the ImGui overlays.
+   QueueMouseCaptureUpdate(IsEnabled() && REXCVAR_GET(mnk_mouse) && IsMouseLookActive() &&
+-                          has_focus_ && is_active());
++                          has_focus_ && is_active() && !dwg2::recomp_menu::IsOpen());
+ 
+   if (!is_active() || !has_focus_) {
+     if (out_state) {
+@@ -273,6 +274,24 @@
    }
  
    std::lock_guard lock(state_mutex_);
@@ -21,6 +30,25 @@
 +    }
 +    return X_ERROR_SUCCESS;
 +  }
++
++  if (dwg2::recomp_menu::IsOpen()) {
++    ++packet_number_; mouse_dx_ = 0.0f; mouse_dy_ = 0.0f;
++    if (out_state) {
++      std::memset(out_state, 0, sizeof(*out_state));
++      out_state->packet_number = packet_number_;
++    }
++    return X_ERROR_SUCCESS;
++  }
  
    uint16_t buttons = 0;
    if (IsBindPressed(key_down_, REXCVAR_GET(keybind_a)))
+@@ -374,6 +393,9 @@
+   if (!IsEnabled() || id != kMnkDevice) {
+     return X_ERROR_DEVICE_NOT_CONNECTED;
+   }
++  if (dwg2::recomp_menu::IsOpen()) {
++    return X_ERROR_EMPTY;
++  }
+   std::lock_guard lock(state_mutex_);
+   if (keystroke_queue_.empty()) {
+     return X_ERROR_EMPTY;

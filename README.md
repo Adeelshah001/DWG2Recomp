@@ -15,11 +15,11 @@
 - Xbox and PlayStation button prompts and controller diagrams.
 - Live 1x(720p), 2x(1440p) and 3x(2160p) internal rendering and output resolution.
 - Live field-of-view slider, from Default to +50%. (Experimental)
-- Remembered fullscreen settings, L2/LT and F11 full-screen shortcuts, pause/resume and restart.
+- Open **Recomp Menu** with L2/LT or F1. It includes controls, graphics settings, Pause/Resume, and confirmations for Restart and Quit. F11 and Alt+Enter still toggle fullscreen.
 - One-time ISO import, prepared-game reuse and skipped startup movies.
 - Incremental updates reuse unchanged compiled game parts.
 - Startup save loading and automatic slot selection on supported save screens.
-- Automatic update checks and **Help > Check for Updates**.
+- Automatic update checks and **Recomp Menu > Check for Updates**.
 - Native-style title-screen Quit Game confirmation with B / Circle.
 - In-game Graphics/Video options and one editable **settings.ini**.
 - **DWG2R.exe** setup/launcher with a **DWG2R** desktop shortcut; existing shortcuts are retained on updates.
@@ -65,7 +65,7 @@ No game files are included. No separate developer tools or SDK installation is r
 4. Allow the first-time import and preparation to finish. Later launches reuse the prepared game.
 5. Open **Controls** to configure inputs, **View** for resolution/fullscreen, or **FOV** to adjust the field of view.
 
-Save through the game's menus before quitting or restarting. Saves and settings stay in your local installation. On v05 and later, use **Help > Check for Updates**. Save your progress before accepting the close-and-install prompt. Compatible updates keep your prepared executable or reuse cached compiled parts. Compiler/shared-interface changes can still require fuller preparation.
+Save through the game's menus before quitting or restarting. Saves and settings stay in your local installation. On v0.8.2 and later, use **Recomp Menu > Check for Updates**. Earlier versions use **Help > Check for Updates**. Save your progress before accepting the close-and-install prompt. Compatible updates keep your prepared executable or reuse cached compiled parts. Compiler/shared-interface changes can still require fuller preparation.
 
 ## Building from source
 
@@ -86,8 +86,8 @@ title code, compiled objects, caches, saves or logs.
 
 1. **Fork and clone.** Select **Fork** on GitHub and clone your fork. Start from `main` for current source or check out the upstream `v0.7.4-alpha` tag to branch from that release.
 2. **Build and test.** Follow [BUILDING.md](BUILDING.md). The launcher builds on Windows without an SDK or game files. For native code changes, use the pinned ReXGlue SDK, the documented toolchain and your own supported USA Xbox 360 dump. Test in a separate installation with a copied save.
-3. **Point the updater at your fork.** Set `UpdateService.Repository` in [launcher/UpdateService.cs](launcher/UpdateService.cs) to `your-account/your-fork`, update the launcher version for your release, and rebuild. Give testers this fork-configured launcher first so **Help > Check for Updates** reads releases from your fork.
-4. **Package and publish.** Use [the player-package build path](BUILDING.md#path-3--player-package) to assemble the portable preparation files. Use the upstream release ZIP as a reference for the layout and update manifest. The full release-packaging workflow is currently maintainer-side, so assembling the capsule alone will not produce an updater-ready ZIP. Publish a GitHub release on your fork with a tag newer than the installed fork build and attach exactly one full player ZIP named `DWG2Recomp.zip` or `DWG2Recomp-<version>-player.zip`. To use the default update channel, leave the GitHub prerelease flag off. Include the corresponding project source and license notices, and keep game files and generated title code out of the package. Test **Help > Check for Updates** from an older fork build before sharing it.
+3. **Point the updater at your fork.** Set `UpdateService.Repository` in [launcher/UpdateService.cs](launcher/UpdateService.cs) to `your-account/your-fork`, update the launcher version for your release, and rebuild. Give testers this fork-configured launcher first so **Check for Updates** reads releases from your fork.
+4. **Package and publish.** Use [the player-package build path](BUILDING.md#path-3--player-package) to assemble the portable preparation files. Use the upstream release ZIP as a reference for the layout and update manifest. The full release-packaging workflow is currently maintainer-side, so assembling the capsule alone will not produce an updater-ready ZIP. Publish a GitHub release on your fork with a tag newer than the installed fork build and attach exactly one full player ZIP named `DWG2Recomp.zip` or `DWG2Recomp-<version>-player.zip`. To use the default update channel, leave the GitHub prerelease flag off. Include the corresponding project source and license notices, and keep game files and generated title code out of the package. Test **Check for Updates** from an older fork build before sharing it.
 
 ## Contributing
 

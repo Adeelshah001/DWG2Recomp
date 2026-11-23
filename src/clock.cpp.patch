@@ -27,8 +27,12 @@
    }
  
    auto guest_tick_count = UpdateGuestClock();
-@@ -162,7 +164,8 @@
+@@ -162,7 +164,12 @@
  
++extern "C" __declspec(dllexport) uint64_t Dwg2PauseActiveTicks() {
++  return dwg2::pause::ActiveTicks(rex::chrono::Clock::QueryHostTickCount());
++}
++
  uint64_t Clock::QueryGuestSystemTime() {
    if (REXCVAR_GET(clock_no_scaling)) {
 -    return Clock::QueryHostSystemTime();
