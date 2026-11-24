@@ -137,6 +137,19 @@ struct FramePlan {
   std::uint64_t discarded_ticks;
 };
 
+inline constexpr double kTurboBattleScale = 1.1;
+
+constexpr bool PureActiveBattle(std::uint32_t f1416, std::uint32_t f1432, std::uint32_t f1492,
+                                std::uint32_t f1504, std::uint32_t f2884, std::uint32_t f2904,
+                                float f2856) {
+  return f1416 == 0 && f1432 == 0 && f1492 == 0 && f1504 == 0 && f2884 == 0 && f2904 == 0 &&
+         f2856 <= 0.0f;
+}
+
+constexpr double BattleStepNumerator(bool turbo_enabled, bool pure_active_battle) {
+  return (turbo_enabled && pure_active_battle) ? kTurboBattleScale : 1.0;
+}
+
 class Fixed60 {
  public:
   // Store fractional ticks in billionths to avoid rounding 1/60 to nanoseconds.

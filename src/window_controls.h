@@ -34,6 +34,7 @@ extern "C" __declspec(dllexport) int Dwg2GraphicsValue(int key) {
   if(key==4)return dwg2::video::vsync.load()?1:0;
   if(key==5)return dwg2::video::present_fps.load();
   if(key==6)return dwg2::video::fps_counter.load()?1:0;
+  if(key==7)return dwg2::video::turbo.load()?1:0;
   return -1;
 }
 constexpr UINT kScale1 = 41011, kScale3 = 41013;
@@ -49,6 +50,7 @@ extern "C" __declspec(dllexport) int Dwg2GraphicsRequest(int key,int value) {
   if(key==4&&(value==0||value==1))return PostMessageW(hwnd,WM_APP+0x215,value,0)!=0;
   if(key==5&&dwg2::video::ValidFps(value))return PostMessageW(hwnd,WM_APP+0x216,value,0)!=0;
   if(key==6&&(value==0||value==1))return PostMessageW(hwnd,WM_APP+0x217,value,0)!=0;
+  if(key==7&&(value==0||value==1))return PostMessageW(hwnd,WM_APP+0x21B,value,0)!=0;
   return 0;
 }
 extern "C" __declspec(dllexport) int Dwg2SetGpuVsync(int enabled) {
@@ -149,6 +151,17 @@ inline bool ApplyVsync(HWND hwnd,bool enabled,bool show_error=true) {
   if(show_error)MessageBoxW(hwnd,L"The VSync setting could not be saved. The previous value is retained.",L"Graphics / Video",MB_ICONERROR);
   return false;
 }
+inline bool ApplyTurbo(HWND hwnd,rex::ui::WindowSDL* owner,bool enabled,bool show_error=true) {
+  if(dwg2::settings::Set("video","turbo",int(enabled))) {
+    dwg2::video::turbo.store(enabled);
+    Sync(owner);
+    REXLOG_INFO("DWG2 turbo set: {}",enabled);
+    return true;
+  }
+  if(show_error)MessageBoxW(hwnd,L"The Turbo Mode setting could not be saved. The previous value is retained.",L"Turbo Mode",MB_ICONERROR);
+  Sync(owner);
+  return false;
+}
 inline bool ApplyFov(HWND hwnd,int value,bool show_error=true) {
   if(!dwg2::camera::ValidPercent(value))return false;
   if(dwg2::camera::SavePreference(SettingsPath(),value)){dwg2::camera::percent.store(value);dwg2::camera::SyncEditor(value);return true;}
@@ -214,6 +227,7 @@ inline dwg2::recomp_menu::Actions BuildMenuActions(HWND hwnd,State* s) {
   act.set_fps=[hwnd,s](int fps){return ApplyPresentFps(hwnd,s->owner,fps,false)?std::string{}:std::string("Could not save FPS setting.");};
   act.set_fps_counter=[hwnd,s](bool on){return ApplyFpsCounter(hwnd,s->owner,on,false)?std::string{}:std::string("Could not save FPS counter.");};
   act.set_vsync=[hwnd](bool on){return ApplyVsync(hwnd,on,false)?std::string{}:std::string("Could not save VSync setting.");};
+  act.set_turbo=[hwnd,s](bool on){return ApplyTurbo(hwnd,s->owner,on,false)?std::string{}:std::string("Could not save Turbo Mode.");};
   act.set_prompts=[hwnd,s](int c){return ApplyPrompts(hwnd,s->owner,c,dwg2::prompts::hud_correction.load(),false)?std::string{}:std::string("Could not save prompt style.");};
   act.check_updates=[]{return RequestCheckUpdates();};
   act.save_controls=[](const std::array<dwg2::input::Profile,3>& p){return dwg2::input::SavePlayerControls(p)?std::string{}:std::string("Could not save settings.ini.");};
@@ -225,16 +239,21 @@ inline dwg2::recomp_menu::Actions BuildMenuActions(HWND hwnd,State* s) {
   act.fps=[]{return dwg2::video::present_fps.load();};
   act.fps_counter=[]{return dwg2::video::fps_counter.load();};
   act.vsync=[]{return dwg2::video::vsync.load();};
+  act.turbo=[]{return dwg2::video::turbo.load();};
   act.prompt_choice=[]{return dwg2::prompts::choice.load();};
   act.prompt_style=[]{return dwg2::prompts::Effective();};
   act.version_text=[s]{return s->cached_version;};
   return act;
 }
+inline void RequestRecompMenuPaint(State* s) {
+  const bool queued = s->owner->RequestForcedPaintFromUIThread();
+  s->was_menu_open = dwg2::recomp_menu::IsOpen() || !queued;
+}
 inline void PollRecompMenu(HWND hwnd,State* s) {
   if(GetForegroundWindow()!=hwnd||dwg2::input::editing.load()||dwg2::update_modal::Active()) {
     s->prev_kb_menu_toggle=false;
     for(auto& kv:s->prev_gp_menu_toggle)kv.second=false;
-    if(s->was_menu_open&&!dwg2::recomp_menu::IsOpen()){s->was_menu_open=false;s->owner->RequestPaint();}
+    if(s->was_menu_open&&!dwg2::recomp_menu::IsOpen())RequestRecompMenuPaint(s);
     return;
   }
   dwg2::input::Raw kb_raw;
@@ -301,8 +320,7 @@ inline void PollRecompMenu(HWND hwnd,State* s) {
   s->prev_kb_menu_toggle=kb_toggle;
   const bool now_open=dwg2::recomp_menu::IsOpen();
   if(!now_open&&GetCapture()==hwnd)ReleaseCapture();
-  if(now_open||was_open||s->was_menu_open)s->owner->RequestPaint();
-  s->was_menu_open=now_open;
+  if(now_open||was_open||s->was_menu_open)RequestRecompMenuPaint(s);
 }
 inline LRESULT CALLBACK Procedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
                                    UINT_PTR id, DWORD_PTR data) {
@@ -328,16 +346,20 @@ inline LRESULT CALLBACK Procedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
   }
   if(msg==WM_APP+0x218) {
     dwg2::recomp_menu::Toggle();
-    s->owner->RequestPaint();
+    RequestRecompMenuPaint(s);
     return 0;
   }
   if(msg==WM_APP+0x219) {
-    if(wp<=2){ApplyPrompts(hwnd,s->owner,int(wp),dwg2::prompts::hud_correction.load(),false);s->owner->RequestPaint();}
+    if(wp<=2){ApplyPrompts(hwnd,s->owner,int(wp),dwg2::prompts::hud_correction.load(),false);RequestRecompMenuPaint(s);}
     return 0;
   }
   if(msg==WM_APP+0x21A) {
     TogglePause(s);
-    s->owner->RequestPaint();
+    RequestRecompMenuPaint(s);
+    return 0;
+  }
+  if(msg==WM_APP+0x21B) {
+    if(wp<=1)ApplyTurbo(hwnd,s->owner,wp!=0,true);
     return 0;
   }
   if(msg==WM_SIZE)dwg2::recomp_menu::InvalidateHitRects();
@@ -345,7 +367,7 @@ inline LRESULT CALLBACK Procedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
   if(dwg2::recomp_menu::IsOpen()&&(msg==WM_MOUSEMOVE||msg==WM_LBUTTONDOWN||msg==WM_LBUTTONUP||msg==WM_MOUSEWHEEL)) {
     if(msg==WM_MOUSEWHEEL) {
       dwg2::recomp_menu::HandleMouseWheel(float(static_cast<short>(HIWORD(wp)))/120.0f);
-      s->owner->RequestPaint();
+      RequestRecompMenuPaint(s);
       return 0;
     }
     RECT rc{};GetClientRect(hwnd,&rc);
@@ -359,7 +381,7 @@ inline LRESULT CALLBACK Procedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
     }
     else{if(GetCapture()==hwnd)ReleaseCapture();dwg2::recomp_menu::HandleMouseUp();}
     if(!dwg2::recomp_menu::IsOpen()&&GetCapture()==hwnd)ReleaseCapture();
-    s->owner->RequestPaint();
+    RequestRecompMenuPaint(s);
     return 0;
   }
   if (msg == WM_APP + 0x212) {
@@ -443,6 +465,7 @@ inline void Install(rex::ui::WindowSDL* owner, SDL_Window* sdl) {
   dwg2::video::vsync.store(dwg2::settings::Integer(preferences,"video","vsync",REXCVAR_GET(dwg2_host_vsync)?1:0,0,1)!=0);
   REXCVAR_GET(dwg2_host_vsync)=dwg2::video::vsync.load();
   dwg2::video::fps_counter.store(dwg2::settings::Integer(preferences,"video","fps_counter",0,0,1)!=0);
+  dwg2::video::turbo.store(dwg2::settings::Integer(preferences,"video","turbo",0,0,1)!=0);
   {const int fallback_fps=dwg2::video::NormalizeFps(REXCVAR_GET(dwg2_present_fps));
    const int fps_val=dwg2::video::NormalizeFps(dwg2::settings::Integer(preferences,"video","presentation_fps",fallback_fps,0,240));
    dwg2::video::present_fps.store(fps_val);
@@ -452,7 +475,7 @@ inline void Install(rex::ui::WindowSDL* owner, SDL_Window* sdl) {
   Sync(owner);
   {int scale=dwg2::settings::Integer(preferences,"graphics","resolution_scale",1,1,3);if(scale<1||scale>3)scale=1;graphics_scale.store(scale);}
   if(!dwg2::input::Load())MessageBoxW(hwnd,L"settings.ini could not be read. Default mappings are active; the file is preserved until you save new mappings.",L"Controls",MB_ICONWARNING);
-  REXLOG_INFO("DWG2 settings.ini loaded: scale={} fov={} vsync={} fps={} fps_counter={} prompts={} hud_correction={}",graphics_scale.load(),dwg2::camera::percent.load(),dwg2::video::vsync.load(),dwg2::video::present_fps.load(),dwg2::video::fps_counter.load(),dwg2::prompts::choice.load(),dwg2::prompts::hud_correction.load());
+  REXLOG_INFO("DWG2 settings.ini loaded: scale={} fov={} vsync={} fps={} fps_counter={} turbo={} prompts={} hud_correction={}",graphics_scale.load(),dwg2::camera::percent.load(),dwg2::video::vsync.load(),dwg2::video::present_fps.load(),dwg2::video::fps_counter.load(),dwg2::video::turbo.load(),dwg2::prompts::choice.load(),dwg2::prompts::hud_correction.load());
 }
 }  // namespace dwg2::controls
 #endif

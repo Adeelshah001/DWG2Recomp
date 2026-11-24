@@ -48,7 +48,7 @@
  /**
   ******************************************************************************
   * Xenia : Xbox 360 Emulator Research Project                                 *
-@@ -10,9 +48,14 @@
+@@ -10,9 +54,14 @@
   */
  
  #include <algorithm>
@@ -63,7 +63,7 @@
  #include <utility>
  
  #include <rex/assert.h>
-@@ -33,6 +76,8 @@
+@@ -33,6 +82,8 @@
  REXCVAR_DEFINE_BOOL(d3d12_allow_variable_refresh_rate_and_tearing, true, "UI/D3D12",
                      "Allow variable refresh rate and tearing");
  
@@ -72,7 +72,7 @@
  namespace rex::ui::d3d12 {
  
  // Generated with `xb buildshaders`.
-@@ -49,6 +94,8 @@
+@@ -49,6 +100,8 @@
  #include "ui/shaders/bytecode/d3d12_5_1/guest_output_ffx_fsr_rcas_ps.h"
  #endif
  #include "ui/shaders/bytecode/d3d12_5_1/guest_output_triangle_strip_rect_vs.h"
@@ -81,7 +81,7 @@
  }  // namespace shaders
  
  D3D12Presenter::~D3D12Presenter() {
-@@ -58,6 +105,8 @@
+@@ -58,6 +111,8 @@
    paint_context_.AwaitSwapChainUsageCompletion();
    guest_output_resource_refresher_submission_tracker_.Shutdown();
    ui_submission_tracker_.Shutdown();
@@ -90,7 +90,7 @@
  #if defined(REX_HAS_FIDELITYFX_RUNTIME) && REX_HAS_FIDELITYFX_RUNTIME
    DestroyTemporalUpscalerContext();
  #endif
-@@ -555,6 +603,47 @@
+@@ -555,6 +610,47 @@
  }
  
  Presenter::PaintResult D3D12Presenter::PaintAndPresentImpl(bool execute_ui_drawers) {
@@ -138,7 +138,7 @@
    // Begin the command list with the command allocator not currently potentially
    // used on the GPU.
    UINT64 current_paint_submission = paint_context_.paint_submission_tracker.GetCurrentSubmission();
-@@ -1129,6 +1218,51 @@
+@@ -1129,6 +1225,52 @@
      ExecuteUIDrawersFromUIThread(ui_draw_context);
    }
  
@@ -168,6 +168,7 @@
 +    menu_act.fps = [] { return Dwg2GraphicsValue(5); };
 +    menu_act.fps_counter = [] { return Dwg2GraphicsValue(6) != 0; };
 +    menu_act.vsync = [] { return Dwg2GraphicsValue(4) != 0; };
++    menu_act.turbo = [] { return Dwg2GraphicsValue(7) != 0; };
 +    menu_act.prompt_choice = [] { return dwg2::prompts::choice.load(); };
 +    menu_act.prompt_style = [] { return dwg2::prompts::Effective(); };
 +    menu_act.version_text = [] { return kMenuVersion; };
@@ -190,7 +191,7 @@
    // End drawing to the back buffer.
    D3D12_RESOURCE_BARRIER barrier_rtv_to_present;
    barrier_rtv_to_present.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-@@ -1155,9 +1262,39 @@
+@@ -1155,9 +1297,39 @@
    // fullscreen is ever used in, the allow tearing flag must not be passed in
    // fullscreen, but DXGI fullscreen is largely unneeded with the flip
    // presentation model used in Direct3D 12).

@@ -122,6 +122,26 @@ int Dwg2CurrentFpsSetting() {
   return fn ? dwg2::video::NormalizeFps(fn(5)) : dwg2::video::kDefaultFps;
 }
 
+bool Dwg2TurboEnabled() {
+  using QueryFn = int (*)(int);
+  static const QueryFn fn = []() -> QueryFn {
+    if (const auto mod = GetModuleHandleW(L"rexruntime.dll"))
+      return reinterpret_cast<QueryFn>(GetProcAddress(mod, "Dwg2GraphicsValue"));
+    return nullptr;
+  }();
+  return fn && fn(7) > 0;
+}
+
+bool IsPureActiveGameplay(uint8_t* base) {
+  if ((REX_LOAD_U32(0x826CB400) & 1) == 0) return false;
+  constexpr uint32_t p1 = 0x826C4F10u;  // root (0x826C4F00) + 16
+  // shortcut: gates on 1P battle suppression flags; upgrade to check root+2928 if 2P split-screen diverges
+  return dwg2::timing::PureActiveBattle(
+      REX_LOAD_U32(p1 + 1416), REX_LOAD_U32(p1 + 1432), REX_LOAD_U32(p1 + 1492),
+      REX_LOAD_U32(p1 + 1504), REX_LOAD_U32(p1 + 2884), REX_LOAD_U32(p1 + 2904),
+      std::bit_cast<float>(REX_LOAD_U32(p1 + 2856)));
+}
+
 bool Dwg2ImmediateBattleSwapActive() {
   static const int env_override = Dwg2EnvOverride(L"DWG2_EXPERIMENTAL_IMMEDIATE_SWAP");
   if (env_override >= 0) return env_override != 0;
@@ -309,7 +329,9 @@ REX_HOOK_RAW(sub_82545F60) {
   const auto return_address = ctx.lr;
   __imp__sub_82545F60(ctx, base);
   // This pair feeds both accumulated scene time and the virtual tick's delta.
-  if (fixed_battle_step && return_address == 0x82128B00) ctx.f1.f64 = 1.0;
+  if (fixed_battle_step && return_address == 0x82128B00) {
+    ctx.f1.f64 = dwg2::timing::BattleStepNumerator(Dwg2TurboEnabled(), IsPureActiveGameplay(base));
+  }
   if (fixed_battle_step && return_address == 0x82128B14) ctx.f1.f64 = 60.0;
 }
 

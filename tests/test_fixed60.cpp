@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cmath>
 #include <iostream>
+#include <limits>
 
 using namespace std::chrono;
 using dwg2::timing::Fixed60;
@@ -104,4 +105,19 @@ int main() {
   assert(clock.render_alpha(5ms) == 0.6);
   assert(clock.render_alpha(50ms) == 1.0);
   assert(clock.advance(5ms).alpha == 0.6);
+
+  assert(dwg2::timing::PureActiveBattle(0, 0, 0, 0, 0, 0, 0.0f));
+  assert(dwg2::timing::PureActiveBattle(0, 0, 0, 0, 0, 0, -1.0f));
+  assert(!dwg2::timing::PureActiveBattle(1, 0, 0, 0, 0, 0, 0.0f));
+  assert(!dwg2::timing::PureActiveBattle(0, 1, 0, 0, 0, 0, 0.0f));
+  assert(!dwg2::timing::PureActiveBattle(0, 0, 1, 0, 0, 0, 0.0f));
+  assert(!dwg2::timing::PureActiveBattle(0, 0, 0, 1, 0, 0, 0.0f));
+  assert(!dwg2::timing::PureActiveBattle(0, 0, 0, 0, 1, 0, 0.0f));
+  assert(!dwg2::timing::PureActiveBattle(0, 0, 0, 0, 0, 1, 0.0f));
+  assert(!dwg2::timing::PureActiveBattle(0, 0, 0, 0, 0, 0, 0.1f));
+  assert(!dwg2::timing::PureActiveBattle(0, 0, 0, 0, 0, 0, std::numeric_limits<float>::quiet_NaN()));
+  assert(dwg2::timing::BattleStepNumerator(false, false) == 1.0);
+  assert(dwg2::timing::BattleStepNumerator(false, true) == 1.0);
+  assert(dwg2::timing::BattleStepNumerator(true, false) == 1.0);
+  assert(dwg2::timing::BattleStepNumerator(true, true) == dwg2::timing::kTurboBattleScale);
 }

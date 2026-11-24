@@ -6,6 +6,9 @@ out_directory_path = "generated"
 generate_exception_handlers = true
 
 [functions]
+# Split the dynamically dispatched predicate from the preceding tail calls.
+"821B98F0" = { size = 72 }
+"821B9938" = { size = 24 }
 "823EDD90" = { size = 248 }
 "82200D70" = { size = 48 }
 "82200DD0" = { size = 48 }

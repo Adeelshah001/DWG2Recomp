@@ -169,30 +169,30 @@ void DrawMenuLayout(const MenuSnapshot& snap, float width, std::string_view fps_
   const float detail = content + (right - content) * 0.33f;
   const auto focused = [&](int item) { return !modal && snap.focus == item; };
   auto group = [&](float y, std::string_view name) {
-    label({left, y, content - 12, y + 34}, name, 0.76f, accent);
+    label({left, y, content - 12, y + 32}, name, 0.76f, accent);
   };
-  float y = 116;
-  auto next_row = [&](float height, float gap = 6.0f) {
+  float y = 112;
+  auto next_row = [&](float height, float gap = 5.0f) {
     const Box box{content, y, right, y + height};
     y = box.y1 + gap;
     return box;
   };
-  auto row = [&](int item, float height, float gap = 6.0f) {
+  auto row = [&](int item, float height, float gap = 5.0f) {
     const Box box = next_row(height, gap);
     row_background(box, focused(item));
     register_hit(box, kHitMainRow, item);
     return box;
   };
-  auto toggle = [&](int item, std::string_view name, bool enabled, float gap = 6.0f) {
-    const Box box = row(item, 36, gap);
-    const Box options{right - 160, box.y0 + 4, right - 6, box.y1 - 4};
+  auto toggle = [&](int item, std::string_view name, bool enabled, float gap = 5.0f) {
+    const Box box = row(item, 34, gap);
+    const Box options{right - 160, box.y0 + 3, right - 6, box.y1 - 3};
     label({content + 12, box.y0, options.x0 - 10, box.y1}, name);
     chip(options.Column(0, 2, 6), "Off", kHitToggleOff, item, !enabled);
     chip(options.Column(1, 2, 6), "On", kHitToggleOn, item, enabled);
   };
 
   group(y, "File");
-  const auto actions = next_row(40, 12);
+  const auto actions = next_row(38, 10);
   chip(actions.Column(0, 3, 8), "Restart", kHitMainRow, kRestart, false, focused(kRestart));
   chip(actions.Column(1, 3, 8), snap.paused ? "Resume" : "Pause",
        kHitMainRow, kPause, false, focused(kPause));
@@ -200,7 +200,7 @@ void DrawMenuLayout(const MenuSnapshot& snap, float width, std::string_view fps_
 
   group(y, "Display");
   toggle(kFullscreen, "Fullscreen", snap.fullscreen);
-  const Box resolution = row(kResolution, 38);
+  const Box resolution = row(kResolution, 35);
   const int res = snap.resolution_pending ? snap.resolution_pending : snap.resolution;
   label({content + 12, resolution.y0, detail - 8, resolution.y1},
         snap.resolution_pending ? "Applying resolution..." : "Resolution");
@@ -210,7 +210,7 @@ void DrawMenuLayout(const MenuSnapshot& snap, float width, std::string_view fps_
     chip(res_choices.Column(i, 3, 6), sizes[i], kHitResStop, i + 1, res == i + 1);
   }
 
-  const Box fov = row(kFov, 46, 12);
+  const Box fov = row(kFov, 46, 10);
   const std::string fov_label = snap.fov == 0 ? "FOV: Default" :
       "FOV: +" + std::to_string(snap.fov) + "%";
   label({content + 12, fov.y0, detail - 8, fov.y1}, fov_label);
@@ -222,7 +222,7 @@ void DrawMenuLayout(const MenuSnapshot& snap, float width, std::string_view fps_
   label(marks.Column(2, 3, 4), "+100%", 0.62f, muted, Align::kRight);
 
   group(y, "Performance");
-  const Box fps = row(kFps, 38);
+  const Box fps = row(kFps, 35);
   label({content + 12, fps.y0, detail - 8, fps.y1}, "Frame Rate");
   const Box fps_choices{detail, fps.y0 + 4, right - 6, fps.y1 - 4};
   constexpr const char* rates[] = {"60 FPS", "120 FPS", "Uncapped"};
@@ -230,14 +230,15 @@ void DrawMenuLayout(const MenuSnapshot& snap, float width, std::string_view fps_
   for (int i = 0; i < 3; ++i) {
     chip(fps_choices.Column(i, 3, 6), rates[i], kHitFpsChoice, values[i], snap.fps == values[i]);
   }
-  const auto note = next_row(28);
+  const auto note = next_row(26);
   label(note.Inset(12, 0), "Above 60 FPS is experimental. Game logic stays at 60 Hz.",
         0.72f, muted);
   toggle(kFpsCounter, "FPS Counter", snap.fps_counter);
-  toggle(kVsync, "VSync", snap.vsync, 12);
+  toggle(kVsync, "VSync", snap.vsync);
+  toggle(kTurbo, "Turbo Mode (+10%)", snap.turbo, 10);
 
   group(y, "Controls");
-  const Box prompts = row(kButtonPrompts, 36);
+  const Box prompts = row(kButtonPrompts, 35);
   label({content + 12, prompts.y0, detail - 8, prompts.y1}, "Button Prompts");
   const Box prompt_choices{detail, prompts.y0 + 4, right - 6, prompts.y1 - 4};
   constexpr const char* styles[] = {"Xbox", "PS5", "Auto"};
@@ -245,13 +246,13 @@ void DrawMenuLayout(const MenuSnapshot& snap, float width, std::string_view fps_
     chip(prompt_choices.Column(i, 3, 6), styles[i], kHitPromptChoice, (i + 1) % 3,
          snap.prompt_choice == (i + 1) % 3);
   }
-  const Box config = row(kConfigureControls, 38, 12);
+  const Box config = row(kConfigureControls, 35, 10);
   label({content + 12, config.y0, config.x1 - 42, config.y1}, "Configure Controls");
   label({config.x1 - 34, config.y0, config.x1 - 8, config.y1}, ">", 0.85f, accent,
         Align::kCenter);
 
   group(y, "About");
-  const Box about = next_row(38);
+  const Box about = next_row(36);
   const Box updates{right - 232, about.y0, right, about.y1};
   label({content + 12, about.y0, updates.x0 - 12, about.y1},
         "Version: " + (snap.version_text.empty() ? std::string("Unknown") : snap.version_text),

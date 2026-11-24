@@ -30,6 +30,7 @@ enum MainItem : int {
   kFps,
   kFpsCounter,
   kVsync,
+  kTurbo,
   kButtonPrompts,
   kConfigureControls,
   kCheckUpdates,
@@ -85,6 +86,7 @@ struct Actions {
   std::function<std::string(int)> set_fps;
   std::function<std::string(bool)> set_fps_counter;
   std::function<std::string(bool)> set_vsync;
+  std::function<std::string(bool)> set_turbo;
   std::function<std::string(int)> set_prompts;
   std::function<std::string()> check_updates;
   std::function<std::string(const std::array<dwg2::input::Profile, 3>&)> save_controls;
@@ -97,6 +99,7 @@ struct Actions {
   std::function<int()> fps;
   std::function<bool()> fps_counter;
   std::function<bool()> vsync;
+  std::function<bool()> turbo;
   std::function<int()> prompt_choice;
   std::function<int()> prompt_style;
   std::function<std::string()> version_text;
@@ -125,6 +128,7 @@ struct MenuSnapshot {
   int fps = 60;
   bool fps_counter = false;
   bool vsync = false;
+  bool turbo = false;
   int prompt_choice = 0;
   int prompt_style = 1;
   std::string version_text;
@@ -324,6 +328,7 @@ enum class PendingOp {
   kSetFps,
   kSetFpsCounter,
   kSetVsync,
+  kSetTurbo,
   kSetPrompts,
   kCheckUpdates,
   kSaveWizard
@@ -364,6 +369,9 @@ inline void ExecuteCommand(const Command& cmd, const Actions& act, uint64_t now_
       break;
     case PendingOp::kSetVsync:
       if (act.set_vsync) toast = act.set_vsync(cmd.bval);
+      break;
+    case PendingOp::kSetTurbo:
+      if (act.set_turbo) toast = act.set_turbo(cmd.bval);
       break;
     case PendingOp::kSetPrompts:
       if (act.set_prompts) toast = act.set_prompts(cmd.ival);
@@ -418,6 +426,8 @@ inline Command BuildMainActivateLocked(State& s, int item, const Actions& act, i
       return {PendingOp::kSetFpsCounter, !(act.fps_counter && act.fps_counter()), 0};
     case kVsync:
       return {PendingOp::kSetVsync, !(act.vsync && act.vsync()), 0};
+    case kTurbo:
+      return {PendingOp::kSetTurbo, !(act.turbo && act.turbo()), 0};
     case kButtonPrompts: {
       int cur = act.prompt_choice ? act.prompt_choice() : 0;
       return {PendingOp::kSetPrompts, false, StepChoice(kPromptOpts, 3, cur, 1, true)};
@@ -459,6 +469,8 @@ inline Command BuildMainHorizLocked(int item, int dir, const Actions& act) {
       return {PendingOp::kSetFpsCounter, dir > 0, 0};
     case kVsync:
       return {PendingOp::kSetVsync, dir > 0, 0};
+    case kTurbo:
+      return {PendingOp::kSetTurbo, dir > 0, 0};
     case kButtonPrompts: {
       int cur = act.prompt_choice ? act.prompt_choice() : 0;
       int next = StepChoice(kPromptOpts, 3, cur, dir, false);
@@ -596,6 +608,7 @@ inline MenuSnapshot Snapshot(const Actions& act = {}, uint64_t now_ms = 0) {
   snap.fps = act.fps ? act.fps() : 60;
   snap.fps_counter = act.fps_counter ? act.fps_counter() : false;
   snap.vsync = act.vsync ? act.vsync() : false;
+  snap.turbo = act.turbo ? act.turbo() : false;
   snap.prompt_choice = act.prompt_choice ? act.prompt_choice() : 0;
   snap.prompt_style = act.prompt_style ? act.prompt_style() : 1;
   snap.version_text = act.version_text ? act.version_text() : std::string{};

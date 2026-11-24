@@ -1,0 +1,11 @@
+--- a/include/rex/ui/presenter.h
++++ b/include/rex/ui/presenter.h
+@@ -843,7 +843,7 @@
+   // may not be made outdated if that happens - though if it's
+   // kPresentedSuboptimal rather than kNotPresentedConnectionOutdated, the image
+   // has been successfully sent to the OS presentation at least.
+-  PaintResult PaintAndPresent(bool execute_ui_drawers);
++  PaintResult PaintAndPresent(bool execute_ui_drawers, bool force_paint = false);
+ 
+   void HandleUIDrawersChangeFromUIThread(bool drawers_were_empty);
+ 

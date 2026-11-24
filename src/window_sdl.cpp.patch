@@ -60,7 +60,33 @@
  }
  
  void WindowSDL::ApplyNewMouseCapture() {
-@@ -474,9 +488,11 @@
+@@ -431,12 +445,23 @@
+   SDL_Event event{};
+   event.type = sdl_app_context().paint_event_type();
+   event.user.windowID = sdl_window_id_;
+-  SDL_PushEvent(&event);
++  if (!SDL_PushEvent(&event)) {
++    paint_pending_.store(false, std::memory_order_release);
++  }
++}
++
++bool WindowSDL::RequestForcedPaintFromUIThread() {
++  // Keep a forced request even when it joins an already queued paint event.
++  force_paint_pending_ = true;
++  RequestPaint();
++  return paint_pending_.load(std::memory_order_acquire);
+ }
+ 
+ void WindowSDL::HandlePaintEvent() {
++  const bool force_paint = force_paint_pending_;
++  force_paint_pending_ = false;
+   paint_pending_.store(false, std::memory_order_release);
+-  OnPaint();
++  OnPaint(force_paint);
+ }
+ 
+ void WindowSDL::HandleWindowEvent(SDL_Event& event) {
+@@ -474,9 +499,11 @@
        break;
      }
      case SDL_EVENT_WINDOW_FOCUS_GAINED:

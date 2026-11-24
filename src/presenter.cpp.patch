@@ -5,16 +5,28 @@
  /**
   ******************************************************************************
   * Xenia : Xbox 360 Emulator Research Project                                 *
-@@ -1495,6 +1496,17 @@
+@@ -483,7 +484,7 @@
+       // doesn't limit the frame rate.
+       WaitForUITickFromUIThread();
+ 
+-      paint_result = PaintAndPresent(draw_ui);
++      paint_result = PaintAndPresent(draw_ui, force_paint);
+       if (surface_paint_connection_state_ == SurfacePaintConnectionState::kConnectedOutdated) {
+         // Request another PaintFromUIThread which will try to recover from the
+         // outdated connection in the next frame (not immediately, so the
+@@ -1494,7 +1495,19 @@
+ #endif  // XE_PLATFORM
  }
  
- Presenter::PaintResult Presenter::PaintAndPresent(bool execute_ui_drawers) {
+-Presenter::PaintResult Presenter::PaintAndPresent(bool execute_ui_drawers) {
++Presenter::PaintResult Presenter::PaintAndPresent(bool execute_ui_drawers, bool force_paint) {
 +  // Avoid host repaint ticks repeatedly submitting the same game image.
 +  // Allow connection recovery and occasional UI refresh if guest output stops.
 +  static auto last_actual_paint = std::chrono::steady_clock::now();
 +  const auto now = std::chrono::steady_clock::now();
 +  const auto mailbox = guest_output_mailbox_acquired_and_ready_.load(std::memory_order_acquire);
-+  if (dwg2_diag::swaps.load(std::memory_order_relaxed) > 0 && (mailbox & 3) == (mailbox >> 2) &&
++  if (!force_paint && dwg2_diag::swaps.load(std::memory_order_relaxed) > 0 &&
++      (mailbox & 3) == (mailbox >> 2) &&
 +      surface_paint_connection_was_optimal_at_successful_paint_ &&
 +      now - last_actual_paint < std::chrono::milliseconds(100))
 +    return PaintResult::kNotPresented;

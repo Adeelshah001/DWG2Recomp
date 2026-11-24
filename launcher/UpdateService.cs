@@ -33,27 +33,7 @@ internal sealed class UpdateService : IDisposable {
     Process game;
     internal bool InstallationQueued { get { return queued; } }
     internal void SetGame(Process value) {lock(gameGate)game=value;}
-    internal static string ResolvedVersion {
-        get {
-            try {
-                string path = Path.Combine(Launcher.Root, "maintenance", "release.json");
-                if (!File.Exists(path)) path = Path.Combine(Launcher.Root, "release.json");
-                if (File.Exists(path)) {
-                    var json = File.ReadAllText(path);
-                    var serializer = new System.Web.Script.Serialization.JavaScriptSerializer();
-                    var obj = serializer.DeserializeObject(json) as Dictionary<string, object>;
-                    if (obj != null) {
-                        object v;
-                        if (obj.TryGetValue("version", out v)) {
-                            string vs = v as string;
-                            if (vs != null && VersionNumber(vs) >= 0) return vs;
-                        }
-                    }
-                }
-            } catch {}
-            return "0.8.1-alpha";
-        }
-    }
+    internal static string ResolvedVersion { get { return Launcher.ResolvedVersion; } }
     [DllImport("user32.dll",SetLastError=true)]static extern bool PostMessage(IntPtr window,uint message,IntPtr w,IntPtr l);
     internal static bool RequestNormalClose(Process process) {
         if(process==null)return true;

@@ -6,6 +6,7 @@ namespace dwg2::video {
 inline constexpr int kDefaultFps = 60;
 inline std::atomic<bool> vsync{false};
 inline std::atomic<bool> fps_counter{false};
+inline std::atomic<bool> turbo{false};
 inline std::atomic<int> present_fps{kDefaultFps};
 inline std::atomic<bool> present_fps_initialized{false};
 inline std::atomic<bool> battle_paced{false};

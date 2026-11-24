@@ -315,7 +315,8 @@ int main() {
   {
     const std::array<dwg2::input::Profile, 3> saved_profiles = {
         dwg2::input::Get(0), dwg2::input::Get(1), dwg2::input::Get(2)};
-    bool m_paused = false, m_full = false, m_fps_cnt = false, m_vsync = false, m_quit = false;
+    bool m_paused = false, m_full = false, m_fps_cnt = false, m_vsync = false, m_turbo = false,
+         m_quit = false;
     int m_res = 1, m_fov = 0, m_fps = 60, m_prompts = 0, m_save_calls = 0, m_restarts = 0;
     int m_update_checks = 0;
 
@@ -330,6 +331,7 @@ int main() {
     act.set_fps = [&](int f) -> std::string { m_fps = f; return {}; };
     act.set_fps_counter = [&](bool v) -> std::string { m_fps_cnt = v; return {}; };
     act.set_vsync = [&](bool v) -> std::string { m_vsync = v; return {}; };
+    act.set_turbo = [&](bool v) -> std::string { m_turbo = v; return {}; };
     act.set_prompts = [&](int p) -> std::string { m_prompts = p; return {}; };
     act.save_controls = [&](const std::array<dwg2::input::Profile, 3>&) -> std::string {
       ++m_save_calls;
@@ -342,9 +344,10 @@ int main() {
     act.fps = [&]() { return m_fps; };
     act.fps_counter = [&]() { return m_fps_cnt; };
     act.vsync = [&]() { return m_vsync; };
+    act.turbo = [&]() { return m_turbo; };
     act.prompt_choice = [&]() { return m_prompts; };
 
-    CHECK(dwg2::recomp_menu::kMainItemCount == 12);
+    CHECK(dwg2::recomp_menu::kMainItemCount == 13);
     dwg2::recomp_menu::SetOpen(false);
     CHECK(!dwg2::recomp_menu::IsOpen());
     dwg2::recomp_menu::Toggle(false);
@@ -386,7 +389,7 @@ int main() {
     CHECK(m_update_checks == 1 && dwg2::recomp_menu::Snapshot(act).toast == "Checking for updates...");
     kb_tap(40);
 
-    // Walk all 12 items and verify wrap back to kRestart.
+    // Walk all 13 items and verify wrap back to kRestart.
     for (int i = 0; i < dwg2::recomp_menu::kMainItemCount; ++i) {
       CHECK(dwg2::recomp_menu::Snapshot(act).focus == i);
       kb_tap(40);  // Down
@@ -413,6 +416,13 @@ int main() {
     kb_tap(40);  // VSync
     kb_tap(13);
     CHECK(m_vsync);
+    kb_tap(40);  // Turbo Mode
+    kb_tap(13);
+    CHECK(m_turbo && dwg2::recomp_menu::Snapshot(act).turbo);
+    kb_tap(37);  // Left -> Off
+    CHECK(!m_turbo);
+    kb_tap(39);  // Right -> On
+    CHECK(m_turbo);
     kb_tap(40);  // Button Prompts
     kb_tap(13);  // 0 -> 1
     CHECK(m_prompts == 1);
@@ -494,6 +504,8 @@ int main() {
         {400, 100, 440, 120, dwg2::recomp_menu::kHitClose, 0},
         {460, 100, 500, 120, dwg2::recomp_menu::kHitToggleOn, dwg2::recomp_menu::kFullscreen},
         {520, 100, 560, 120, dwg2::recomp_menu::kHitToggleOff, dwg2::recomp_menu::kFullscreen},
+        {650, 100, 690, 120, dwg2::recomp_menu::kHitToggleOn, dwg2::recomp_menu::kTurbo},
+        {700, 100, 740, 120, dwg2::recomp_menu::kHitToggleOff, dwg2::recomp_menu::kTurbo},
         {580, 100, 640, 120, dwg2::recomp_menu::kHitMainRow, dwg2::recomp_menu::kRestart},
     }, dwg2::recomp_menu::View::kMain, 0);
     CHECK(dwg2::recomp_menu::HandleMouseDown(200.0f, 110.0f, act, now));
@@ -507,6 +519,8 @@ int main() {
     CHECK(dwg2::recomp_menu::HandleMouseDown(480.0f, 110.0f, act, now) && m_full);
     CHECK(dwg2::recomp_menu::HandleMouseDown(480.0f, 110.0f, act, now) && m_full);
     CHECK(dwg2::recomp_menu::HandleMouseDown(540.0f, 110.0f, act, now) && !m_full);
+    CHECK(dwg2::recomp_menu::HandleMouseDown(670.0f, 110.0f, act, now) && m_turbo);
+    CHECK(dwg2::recomp_menu::HandleMouseDown(720.0f, 110.0f, act, now) && !m_turbo);
     CHECK(dwg2::recomp_menu::HandleMouseDown(600.0f, 110.0f, act, now));
     CHECK(!dwg2::recomp_menu::HandleMouseDown(420.0f, 110.0f, act, now)); // Stale main hit.
 
