@@ -10,7 +10,8 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
-extern "C" int Dwg2NotifyInputActivity(int family,int controller);
+extern "C" int Dwg2NotifyInputActivity(int style,int controller);
+extern "C" int Dwg2SeedConnectedController(int style);
 
 namespace dwg2::input {
 inline const std::filesystem::path& Root() {
@@ -21,8 +22,18 @@ inline const std::filesystem::path& Root() {
  return cached;
 }
 inline int Family(SDL_Gamepad* pad) {
- auto type=SDL_GetGamepadType(pad);
- return type==SDL_GAMEPAD_TYPE_PS5 || type==SDL_GAMEPAD_TYPE_PS4?1:2;
+ auto type=SDL_GetRealGamepadType(pad);
+ if(static_cast<int>(type)<=1)type=SDL_GetGamepadType(pad);
+ return (type==SDL_GAMEPAD_TYPE_PS3 || type==SDL_GAMEPAD_TYPE_PS4 || type==SDL_GAMEPAD_TYPE_PS5)?1:2;
+}
+inline int PromptStyle(SDL_Gamepad* pad) {
+ return dwg2::prompts::ClassifyGamepadStyle(
+     int(SDL_GetRealGamepadType(pad)),
+     int(SDL_GetGamepadType(pad)),
+     SDL_GetGamepadVendor(pad),
+     SDL_GetGamepadProduct(pad),
+     SDL_GamepadHasButton(pad,SDL_GAMEPAD_BUTTON_MISC1),
+     SDL_GetGamepadName(pad));
 }
 inline Raw ReadPad(SDL_Gamepad* pad) {
  Raw raw;
@@ -38,14 +49,14 @@ inline std::map<unsigned long long,bool> fullscreen_edges;
 struct GateState { unsigned generation=0; bool wait=false; };
 inline std::map<unsigned long long,GateState> release_gates;
 inline std::map<unsigned long long,Raw> prompt_activity;
-inline void ObservePromptDevice(unsigned long long id,int family,const Raw& raw) {
+inline void ObservePromptDevice(unsigned long long id,int style,const Raw& raw) {
  std::lock_guard lock(edges_mutex);auto& previous=prompt_activity[id];bool changed=false;
  for(size_t i=0;i<raw.buttons.size();++i)changed|=raw.buttons[i]&&!previous.buttons[i];
  for(size_t i=0;i<raw.keys.size();++i)changed|=raw.keys[i]&&!previous.keys[i];
  for(size_t i=0;i<raw.axes.size();++i)
   changed|=std::abs(raw.axes[i])>.35f&&std::abs(raw.axes[i]-previous.axes[i])>.12f;
  previous=raw;if(changed&&!editing.load()) {
-  Dwg2NotifyInputActivity(family,id!=0x100000000ull?1:0);
+  Dwg2NotifyInputActivity(style,id!=0x100000000ull?1:0);
  }
 }
 inline bool Gate(unsigned long long device,bool held) {
@@ -64,9 +75,11 @@ template<class Gamepad> inline void Pad(SDL_Gamepad* device,Gamepad& out,HWND wi
  Output result;
  const auto id=static_cast<unsigned long long>(SDL_GetGamepadID(device));
  if(SDL_GamepadConnected(device)) {
+  const int style=PromptStyle(device);
+  Dwg2SeedConnectedController(style);
   auto raw=ReadPad(device);bool held=false;for(bool button:raw.buttons)held|=button;
   for(float axis:raw.axes)held|=std::abs(axis)>.25f;
-  if(active)ObservePromptDevice(id,Family(device)==1?2:1,raw);
+  if(active)ObservePromptDevice(id,style,raw);
   if(!Gate(id,held) && active) {
    result=Map(Get(Family(device)),raw);
   }

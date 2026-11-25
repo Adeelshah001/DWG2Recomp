@@ -96,8 +96,14 @@ void DrawMenuLayout(const MenuSnapshot& snap, float width, std::string_view fps_
   label({left, 54, center + 106, 96}, wizard ? "Controls Configuration" : "Recomp Menu",
         1.43f);
   const Box close_box{right - 148, 58, right, 90};
-  const char* close_label = wizard ? "Back" : (snap.prompt_style == 2 ? "L2  Close"
-      : (snap.prompt_style == 3 ? "F1  Close" : "LT  Close"));
+  const char* close_label = wizard
+      ? "Back"
+      : (dwg2::prompts::IsPlayStation(snap.prompt_style)
+             ? "L2  Close"
+             : (snap.prompt_style == dwg2::prompts::kKeyboard
+                    ? "F1  Close"
+                    : (snap.prompt_style == dwg2::prompts::kSwitch ? "ZL  Close"
+                                                                   : "LT  Close")));
   chip(close_box, close_label, wizard ? kHitWizBack : kHitClose);
   label({center + 108, 58, close_box.x0 - 14, 90}, fps_status, 0.70f, muted, Align::kRight);
   fill({left, 103, right, 104}, line);
@@ -105,7 +111,7 @@ void DrawMenuLayout(const MenuSnapshot& snap, float width, std::string_view fps_
   if (wizard) {
     const Box tabs{left + 44, 114, right - 44, 152};
     chip({left, tabs.y0, tabs.x0 - 8, tabs.y1}, "<", kHitWizPrevProfile);
-    constexpr const char* profiles[] = {"Keyboard", "PS5", "Xbox"};
+    constexpr const char* profiles[] = {"Keyboard", "PS", "Xbox"};
     for (int p = 0; p < 3; ++p) {
       chip(tabs.Column(p, 3, 8), profiles[p], kHitWizProfileTab, p, snap.wiz_profile == p);
     }
@@ -241,11 +247,19 @@ void DrawMenuLayout(const MenuSnapshot& snap, float width, std::string_view fps_
   const Box prompts = row(kButtonPrompts, 35);
   label({content + 12, prompts.y0, detail - 8, prompts.y1}, "Button Prompts");
   const Box prompt_choices{detail, prompts.y0 + 4, right - 6, prompts.y1 - 4};
-  constexpr const char* styles[] = {"Xbox", "PS5", "Auto"};
-  for (int i = 0; i < 3; ++i) {
-    chip(prompt_choices.Column(i, 3, 6), styles[i], kHitPromptChoice, (i + 1) % 3,
-         snap.prompt_choice == (i + 1) % 3);
-  }
+  constexpr float kArrowWidth = 42.0f;
+  chip({prompt_choices.x0, prompt_choices.y0, prompt_choices.x0 + kArrowWidth, prompt_choices.y1},
+       "<", kHitPromptChoice, -1);
+  const Box prompt_val{prompt_choices.x0 + kArrowWidth + 6.0f, prompt_choices.y0,
+                       prompt_choices.x1 - kArrowWidth - 6.0f, prompt_choices.y1};
+  framed(prompt_val, line, button);
+  const std::string prompt_text =
+      snap.prompt_choice == 0
+          ? ("Auto (" + std::string(dwg2::prompts::StyleName(snap.prompt_style)) + ")")
+          : std::string(dwg2::prompts::StyleName(snap.prompt_choice));
+  label(prompt_val.Inset(8, 3), prompt_text, 0.77f, ink, Align::kCenter);
+  chip({prompt_choices.x1 - kArrowWidth, prompt_choices.y0, prompt_choices.x1, prompt_choices.y1},
+       ">", kHitPromptChoice, -2);
   const Box config = row(kConfigureControls, 35, 10);
   label({content + 12, config.y0, config.x1 - 42, config.y1}, "Configure Controls");
   label({config.x1 - 34, config.y0, config.x1 - 8, config.y1}, ">", 0.85f, accent,

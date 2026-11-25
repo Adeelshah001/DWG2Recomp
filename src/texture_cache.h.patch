@@ -8,3 +8,12 @@
    virtual void ClearCache();
  
    virtual void CompletedSubmissionUpdated(uint64_t completed_submission_index);
+@@ -227,6 +228,8 @@
+       return mips_outdated_;
+     }
+     void MakeUpToDateAndWatch(const std::unique_lock<std::recursive_mutex>& global_lock);
++    void MarkOutdated(const std::unique_lock<std::recursive_mutex>& global_lock, bool mark_base,
++                      bool mark_mips);
+ 
+     void WatchCallback(const std::unique_lock<std::recursive_mutex>& global_lock, bool is_mip);
+ 

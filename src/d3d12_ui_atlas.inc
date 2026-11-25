@@ -1,4 +1,9 @@
 // Included inside rex::graphics::d3d12. Guest memory is never patched.
+}  // namespace rex::graphics::d3d12
+#include <filesystem>
+#include <rex/ui/image_decode.h>
+#include "prompt_packs.h"
+namespace rex::graphics::d3d12 {
 namespace {
 int Dwg2PromptStyle() {
   using Query=int(*)();
@@ -20,6 +25,12 @@ uint32_t Dwg2InputGeneration() {
 }
 dwg2::keyboard::Bindings Dwg2KeyboardBindings(uint32_t& generation,dwg2::keyboard::Bindings& alternate) {
  using Query=int(*)(unsigned*,int,unsigned*);static auto query=(Query)GetProcAddress(GetModuleHandleW(L"rexruntime.dll"),"Dwg2KeyboardSnapshot");dwg2::keyboard::Bindings result{};std::array<unsigned,50> snapshot{};if(query&&query(snapshot.data(),int(snapshot.size()),&generation)){std::copy_n(snapshot.begin(),25,result.begin());std::copy_n(snapshot.begin()+25,25,alternate.begin());}return result;
+}
+dwg2::prompt_packs::GamepadBindings Dwg2GamepadBindings(int profile_type,uint32_t& generation) {
+ using Query=int(*)(int,int*,int*,int*,int,unsigned*);static auto query=(Query)GetProcAddress(GetModuleHandleW(L"rexruntime.dll"),"Dwg2GamepadSnapshot");dwg2::prompt_packs::GamepadBindings result{};if(query)query(profile_type,result.kind.data(),result.code.data(),result.sign.data(),25,&generation);return result;
+}
+const std::filesystem::path& Dwg2PromptRoot() {
+ static const std::filesystem::path cached=[]{wchar_t exe[32768]{};GetModuleFileNameW(nullptr,exe,32768);return std::filesystem::path(exe).parent_path().parent_path();}();return cached;
 }
 }
 void D3D12TextureCache::Dwg2RecognizeAtlas(D3D12Texture& texture) {
@@ -85,19 +96,26 @@ void D3D12TextureCache::Dwg2ApplyAtlas(D3D12Texture& texture) {
   const bool controller=texture.dwg2_atlas_kind==5;
   const int style=controller?Dwg2ControllerStyle():Dwg2PromptStyle();
   uint32_t generation=Dwg2InputGeneration();
-  if(style==texture.dwg2_prompt_style&&(style!=3||generation==texture.dwg2_input_generation))return;
+  if(style==texture.dwg2_prompt_style&&generation==texture.dwg2_input_generation)return;
   const auto key=texture.key();const uint32_t width=key.GetWidth(),height=key.GetHeight();
   auto pixels=texture.dwg2_original;
-  if(style==2) {
-    if(controller)pixels=dwg2::art::Controller();
-    else if(!dwg2::atlas::PlayStation(pixels,width,height,texture.dwg2_atlas_kind))return;
-  }
+  dwg2::keyboard::Bindings kb_bindings{},kb_alt{};
+  dwg2::prompt_packs::GamepadBindings gp_bindings{};
   if(style==3) {
-    dwg2::keyboard::Bindings alternate{};const auto bindings=Dwg2KeyboardBindings(generation,alternate);
-    if(controller)pixels=dwg2::keyboard::Bc3(dwg2::keyboard::Diagram(bindings,alternate),512,256);
-    else if(!dwg2::keyboard::Prompts(pixels,width,height,texture.dwg2_atlas_kind,bindings,alternate))return;
-    if(pixels.size()!=texture.dwg2_original.size())return;
+    kb_bindings=Dwg2KeyboardBindings(generation,kb_alt);
+  } else if(!controller) {
+    const int profile_type=(style==2||style==6||style==7)?1:2;
+    gp_bindings=Dwg2GamepadBindings(profile_type,generation);
   }
+  if(controller) {
+    if(!dwg2::prompt_packs::ApplyControllerDiagram(
+           style,&rex::ui::DecodeImageRGBA,Dwg2PromptRoot(),kb_bindings,kb_alt,pixels))return;
+  } else {
+    if(!dwg2::prompt_packs::ApplyPromptAtlas(
+           pixels,width,height,texture.dwg2_atlas_kind,style,&rex::ui::DecodeImageRGBA,
+           Dwg2PromptRoot(),kb_bindings,kb_alt,gp_bindings))return;
+  }
+  if(pixels.size()!=texture.dwg2_original.size())return;
   // These qualified atlases have power-of-two widths >= 512, so each row is
   // already aligned to D3D12's 256-byte texture-copy pitch requirement.
   ID3D12Resource* buffer=nullptr;size_t offset=0;

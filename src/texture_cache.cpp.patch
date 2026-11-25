@@ -1,0 +1,154 @@
+--- a/src/graphics/pipeline/texture/cache.cpp
++++ b/src/graphics/pipeline/texture/cache.cpp
+@@ -420,6 +420,11 @@
+ 
+   Texture& texture = *pending_load.texture;
+   TextureKey texture_key = texture.key();
++  auto rollback_outdated = [&]() {
++    texture.MarkOutdated(global_critical_region_.Acquire(), pending_load.load_base,
++                         pending_load.load_mips);
++    texture_became_outdated_.store(true, std::memory_order_release);
++  };
+   if (texture_key.scaled_resolve) {
+     // Make sure all the scaled resolve memory is resident and accessible from
+     // the shader, including any possible padding that hasn't yet been touched
+@@ -427,24 +432,22 @@
+     // GPU won't be trying to access unmapped memory.
+     if (pending_load.load_base && !EnsureScaledResolveMemoryCommitted(
+                                       texture_key.base_page << 12, texture.GetGuestBaseSize(), 4)) {
++      rollback_outdated();
+       return false;
+     }
+     if (pending_load.load_mips && !EnsureScaledResolveMemoryCommitted(
+                                       texture_key.mip_page << 12, texture.GetGuestMipsSize(), 4)) {
++      rollback_outdated();
+       return false;
+     }
+   }
+ 
+   if (!LoadTextureDataFromResidentMemoryImpl(texture, pending_load.load_base,
+                                              pending_load.load_mips)) {
++    rollback_outdated();
+     return false;
+   }
+ 
+-  // Mark the ranges as uploaded and watch them. This is needed for scaled
+-  // resolves as well to detect when the CPU wants to reuse the memory for a
+-  // regular texture or a vertex buffer, and thus the scaled resolve version is
+-  // not up to date anymore.
+-  texture.MakeUpToDateAndWatch(global_critical_region_.Acquire());
+   texture.LogAction("Loaded");
+ 
+   return true;
+@@ -566,6 +569,15 @@
+   COUNT_profile_set("gpu/texture_cache/request_textures_pending_range_count",
+                     uint32_t(pending_shared_memory_ranges.size()));
+ 
++  if (!pending_texture_loads.empty()) {
++    auto global_lock = global_critical_region_.Acquire();
++    for (const PendingTextureLoad& pending_load : pending_texture_loads) {
++      if (pending_load.texture != nullptr) {
++        pending_load.texture->MakeUpToDateAndWatch(global_lock);
++      }
++    }
++  }
++
+   bool batched_shared_memory_request_succeeded = true;
+   std::vector<std::pair<uint32_t, uint32_t>> pending_shared_memory_range_pairs;
+   if (!pending_shared_memory_ranges.empty()) {
+@@ -577,14 +589,47 @@
+         pending_shared_memory_range_pairs.data(), pending_shared_memory_range_pairs.size());
+   }
+ 
++  auto handle_load_failure = [&](Texture* failed_texture) {
++    if (!failed_texture) {
++      return;
++    }
++    REXGPU_WARN("TextureCache::RequestTextures: failed to load texture at 0x{:08X}",
++                failed_texture->key().base_page << 12);
++    for (size_t bi = 0; bi < texture_bindings_.size(); ++bi) {
++      TextureBinding& b = texture_bindings_[bi];
++      const uint32_t bit = UINT32_C(1) << bi;
++      if (b.texture == failed_texture) {
++        b.texture = nullptr;
++        texture_bindings_in_sync_ &= ~bit;
++        bindings_changed |= bit;
++      }
++      if (b.texture_signed == failed_texture) {
++        b.texture_signed = nullptr;
++        texture_bindings_in_sync_ &= ~bit;
++        bindings_changed |= bit;
++      }
++    }
++  };
+   if (batched_shared_memory_request_succeeded) {
+     for (const PendingTextureLoad& pending_load : pending_texture_loads) {
+-      CommitPreparedTextureLoad(pending_load);
++      if (!CommitPreparedTextureLoad(pending_load)) {
++        handle_load_failure(pending_load.texture);
++      }
+     }
+   } else {
++    {
++      auto global_lock = global_critical_region_.Acquire();
++      for (const PendingTextureLoad& pending_load : pending_texture_loads) {
++        if (pending_load.texture != nullptr) {
++          pending_load.texture->MarkOutdated(global_lock, pending_load.load_base,
++                                             pending_load.load_mips);
++        }
++      }
++    }
++    texture_became_outdated_.store(true, std::memory_order_release);
+     for (const PendingTextureLoad& pending_load : pending_texture_loads) {
+-      if (pending_load.texture != nullptr) {
+-        LoadTextureData(*pending_load.texture);
++      if (pending_load.texture != nullptr && !LoadTextureData(*pending_load.texture)) {
++        handle_load_failure(pending_load.texture);
+       }
+     }
+   }
+@@ -702,6 +747,27 @@
+     mips_watch_handle_ = shared_memory.WatchMemoryRange(
+         key().mip_page << 12, GetGuestMipsSize(), TextureCache::WatchCallback, this, nullptr, 1);
+     outdated_mask_.fetch_and(~kOutdatedBitMips, std::memory_order_release);
++  }
++}
++
++void TextureCache::Texture::MarkOutdated(
++    const std::unique_lock<std::recursive_mutex>& global_lock, bool mark_base, bool mark_mips) {
++  SharedMemory& shared_memory = texture_cache().shared_memory();
++  if (mark_base && GetGuestBaseSize()) {
++    if (base_watch_handle_) {
++      shared_memory.UnwatchMemoryRange(base_watch_handle_);
++      base_watch_handle_ = nullptr;
++    }
++    base_outdated_ = true;
++    outdated_mask_.fetch_or(kOutdatedBitBase, std::memory_order_release);
++  }
++  if (mark_mips && GetGuestMipsSize()) {
++    if (mips_watch_handle_) {
++      shared_memory.UnwatchMemoryRange(mips_watch_handle_);
++      mips_watch_handle_ = nullptr;
++    }
++    mips_outdated_ = true;
++    outdated_mask_.fetch_or(kOutdatedBitMips, std::memory_order_release);
+   }
+ }
+ 
+@@ -888,11 +954,16 @@
+     return true;
+   }
+ 
++  texture.MakeUpToDateAndWatch(global_critical_region_.Acquire());
++
+   std::pair<uint32_t, uint32_t> pending_range_pairs[2];
+   for (size_t i = 0; i < pending_range_count; ++i) {
+     pending_range_pairs[i] = std::make_pair(pending_ranges[i].start, pending_ranges[i].length);
+   }
+   if (!shared_memory().RequestRanges(pending_range_pairs, pending_range_count)) {
++    texture.MarkOutdated(global_critical_region_.Acquire(), pending_load.load_base,
++                         pending_load.load_mips);
++    texture_became_outdated_.store(true, std::memory_order_release);
+     return false;
+   }
+ 

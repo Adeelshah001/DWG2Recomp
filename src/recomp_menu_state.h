@@ -14,6 +14,7 @@
 
 #include "input_config.h"
 #include "player_control_settings.h"
+#include "prompt_control.h"
 #include "video_control.h"
 
 namespace dwg2::recomp_menu {
@@ -394,7 +395,6 @@ inline void ExecuteCommand(const Command& cmd, const Actions& act, uint64_t now_
 
 inline Command BuildMainActivateLocked(State& s, int item, const Actions& act, int preferred_profile) {
   static constexpr int kFpsOpts[3] = {60, 120, 0};
-  static constexpr int kPromptOpts[3] = {1, 2, 0};
   switch (item) {
     case kRestart:
       s.view = View::kConfirmRestart;
@@ -430,7 +430,8 @@ inline Command BuildMainActivateLocked(State& s, int item, const Actions& act, i
       return {PendingOp::kSetTurbo, !(act.turbo && act.turbo()), 0};
     case kButtonPrompts: {
       int cur = act.prompt_choice ? act.prompt_choice() : 0;
-      return {PendingOp::kSetPrompts, false, StepChoice(kPromptOpts, 3, cur, 1, true)};
+      return {PendingOp::kSetPrompts, false,
+              StepChoice(dwg2::prompts::kMenuOrder, 9, cur, 1, true)};
     }
     case kConfigureControls:
       EnterWizardLocked(s, preferred_profile);
@@ -444,7 +445,6 @@ inline Command BuildMainActivateLocked(State& s, int item, const Actions& act, i
 
 inline Command BuildMainHorizLocked(int item, int dir, const Actions& act) {
   static constexpr int kFpsOpts[3] = {60, 120, 0};
-  static constexpr int kPromptOpts[3] = {1, 2, 0};
   switch (item) {
     case kFullscreen:
       return {PendingOp::kSetFullscreen, dir > 0, 0};
@@ -473,7 +473,7 @@ inline Command BuildMainHorizLocked(int item, int dir, const Actions& act) {
       return {PendingOp::kSetTurbo, dir > 0, 0};
     case kButtonPrompts: {
       int cur = act.prompt_choice ? act.prompt_choice() : 0;
-      int next = StepChoice(kPromptOpts, 3, cur, dir, false);
+      int next = StepChoice(dwg2::prompts::kMenuOrder, 9, cur, dir, true);
       return next != cur ? Command{PendingOp::kSetPrompts, false, next} : Command{};
     }
     default:
@@ -489,8 +489,24 @@ inline Command NavigateLocked(State& s, int v_step, int h_step, bool confirm, bo
       SetOpenLocked(s, false, false);
       return {};
     }
-    if (v_step != 0) s.focus = (s.focus + v_step + kMainItemCount) % kMainItemCount;
-    if (h_step != 0) return BuildMainHorizLocked(s.focus, h_step, act);
+    if (v_step != 0) {
+      if (s.focus <= kQuitGame) {
+        s.focus = (v_step > 0) ? kFullscreen : (kMainItemCount - 1);
+      } else if (v_step < 0 && s.focus == kFullscreen) {
+        s.focus = kRestart;
+      } else if (v_step > 0 && s.focus == kMainItemCount - 1) {
+        s.focus = kRestart;
+      } else {
+        s.focus += v_step;
+      }
+    }
+    if (h_step != 0) {
+      if (s.focus <= kQuitGame) {
+        s.focus = kRestart + ((s.focus - kRestart + h_step + 3) % 3);
+        return {};
+      }
+      return BuildMainHorizLocked(s.focus, h_step, act);
+    }
     if (confirm) return BuildMainActivateLocked(s, s.focus, act, preferred_profile);
     return {};
   }
@@ -1033,9 +1049,17 @@ inline bool HandleMouseDown(float vx, float vy, const Actions& act, uint64_t now
           }
           break;
         case kHitPromptChoice:
-          if (s.view == View::kMain && r.sub >= 0 && r.sub <= 2) {
-            s.focus = kButtonPrompts;
-            cmd = {detail::PendingOp::kSetPrompts, false, r.sub};
+          if (s.view == View::kMain) {
+            if (r.sub == -1 || r.sub == -2) {
+              s.focus = kButtonPrompts;
+              const int cur = act.prompt_choice ? act.prompt_choice() : 0;
+              const int dir = (r.sub == -1) ? -1 : 1;
+              cmd = {detail::PendingOp::kSetPrompts, false,
+                     detail::StepChoice(dwg2::prompts::kMenuOrder, 9, cur, dir, true)};
+            } else if (dwg2::prompts::ValidChoice(r.sub)) {
+              s.focus = kButtonPrompts;
+              cmd = {detail::PendingOp::kSetPrompts, false, r.sub};
+            }
           }
           break;
         case kHitToggleOff:

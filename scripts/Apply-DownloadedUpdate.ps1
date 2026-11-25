@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$GameFolder,
+﻿param([Parameter(Mandatory=$true)][string]$GameFolder,
       [Parameter(Mandatory=$true)][string]$Package,
       [Parameter(Mandatory=$true)][int]$LauncherProcessId,
       [switch]$NoLaunch,
@@ -9,6 +9,9 @@ $payload=(Resolve-Path -LiteralPath $Package).Path
 $log=Join-Path $target 'logs\update-install.log'
 $updateForm=$null
 $displayProcess=$null;$displayFile=$null;$displayState=$null
+$installStarted=$false
+$maxWaitSeconds=300
+$deadline=[DateTime]::UtcNow.AddSeconds($maxWaitSeconds)
 function Show-UpdateProgress([string]$stage,[long]$completed=0,[long]$total=0,[string]$state='working') {
     if($script:displayState) {
         $record=@{state=$state;message=$stage;completed=$completed;total=$total}
@@ -66,15 +69,14 @@ try {
         $updateForm.Controls.Add($updateLabel);$updateForm.Controls.Add($updateBar)
         # When the player chose Later, keep the helper unobtrusive until play ends.
     }
+    Show-UpdateProgress 'Waiting for the game and launcher to close normally...'
     while(Get-Process -Id $LauncherProcessId -ErrorAction SilentlyContinue) {
+        if([DateTime]::UtcNow -ge $deadline) {throw 'The game or launcher did not close within ' + $maxWaitSeconds + ' seconds. Please close them normally and retry the update. The update package is preserved for retry.'}
         Show-UpdateProgress 'Waiting for the game and launcher to close normally...'
-        Start-Sleep -Milliseconds 150
+        Start-Sleep -Milliseconds 500
     }
     if($updateForm) {$updateForm.TopMost=$true;$updateForm.Show();$updateForm.Activate()}
     Show-UpdateProgress 'Checking that the game has closed...'
-    # The compatibility forwarder may exit just after the launcher it started.
-    # Wait briefly for it as well; never terminate another process.
-    $deadline=[DateTime]::UtcNow.AddSeconds(30)
     do {
         $busy=@(Get-Process -ErrorAction SilentlyContinue | Where-Object {
             try {$path=$_.Path} catch {$path=$null}
@@ -82,18 +84,16 @@ try {
             (!$path -and $_.ProcessName -in @('SETUP_DWG2','DWG2R','START_DWG2','dwg2'))
         })
         if(!$busy.Count) {break}
-        if([DateTime]::UtcNow -ge $deadline) {throw 'The game or launcher is still running. Close it normally and retry the update.'}
+        if([DateTime]::UtcNow -ge $deadline) {throw 'The game or launcher is still running after ' + $maxWaitSeconds + ' seconds. Please close it normally and retry the update. The update package is preserved for retry.'}
         Start-Sleep -Milliseconds 200
         Show-UpdateProgress 'Waiting for the game to close normally...'
     } while($true)
     if($displayState) {
         $displayFile=Join-Path ([IO.Path]::GetTempPath()) ('DWG2UpdateProgress-'+[Guid]::NewGuid().ToString('N')+'.exe')
         Copy-Item -LiteralPath $displaySource -Destination $displayFile
-        Show-UpdateProgress 'Updating your current installation...'
-        $displayProcess=Start-Process -FilePath $displayFile -ArgumentList @(('"'+$displayState+'"'),$PID) -PassThru -WindowStyle Normal
     }
-    New-Item -ItemType Directory -Path (Split-Path $log -Parent) -Force | Out-Null
-    Add-Content -Encoding UTF8 -LiteralPath $log -Value ('Installing verified update: '+[DateTime]::UtcNow.ToString('o'))
+    $installStarted=$true
+    Show-UpdateProgress 'Updating your current installation...'
     $apply=Join-Path $payload 'maintenance/apply-update.ps1'
     if(!(Test-Path -LiteralPath $apply)) {$apply=Join-Path $payload 'apply-update.ps1'}
     $callback={param($stage,$completed,$total) Show-UpdateProgress $stage $completed $total}
@@ -120,55 +120,38 @@ try {
     # Staging may have been cleaned above. Read the installed release identity.
     $installedRelease=Join-Path $target 'maintenance/release.json'
     if(!(Test-Path -LiteralPath $installedRelease)) {$installedRelease=Join-Path $target 'release.json'}
-    try {if(Test-Path -LiteralPath $installedRelease) {
-        $releaseState=Get-Content -LiteralPath $installedRelease -Raw | ConvertFrom-Json
-        if($releaseState.version -match '^v?\d+(\.\d+){0,2}(-(alpha|test)(\.\d+)?)?$') {
-            $receipt=Join-Path $target 'logs/update-completed.json'
-            @{version=$releaseState.version;completedUtc=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $receipt -Encoding UTF8
-        }
-    }} catch {Add-Content -Encoding UTF8 -LiteralPath $log -Value 'Update installed; completion notification could not be recorded.'}
-
+    $receipt=Join-Path $target 'logs/update-completed.json'
     if(!$NoLaunch) {
-        Show-UpdateProgress 'Starting updated launcher...'
-        $ready=$false
-        try {
-            $launcherProc=Start-Process -FilePath $launcher -WorkingDirectory $target -PassThru
-            $gamePath=Join-Path $target 'bin/dwg2.exe'
-            Show-UpdateProgress 'Preparing game and waiting for its window...'
-            $deadline=[DateTime]::UtcNow.AddSeconds(240)
-            do {
-                foreach($game in (Get-Process -Name dwg2 -ErrorAction SilentlyContinue)) {
-                    try {
-                        if($game.Path -eq $gamePath -and $game.MainWindowHandle -ne [IntPtr]::Zero -and !$game.HasExited) {
-                            $ready=$true
-                            break
-                        }
-                    } catch {}
-                }
-                if($ready -or $launcherProc.HasExited) {break}
-                Start-Sleep -Milliseconds 300
-                if($updateForm) {[Windows.Forms.Application]::DoEvents()}
-            } while([DateTime]::UtcNow -lt $deadline)
-        } catch {Add-Content -Encoding UTF8 -LiteralPath $log -Value $_.Exception.Message}
-        if($ready) {
-            Show-UpdateProgress 'Game is running. Update complete.' 1 1 'done'
-        } else {
-            $message='Update installed. The game window did not open. See logs/update-install.log.'
-            Add-Content -Encoding UTF8 -LiteralPath $log -Value $message
-            Show-UpdateProgress $message 0 0 'failed'
-            if($updateForm) {[Windows.Forms.MessageBox]::Show($updateForm,$message,'DWG2 Update') | Out-Null}
-        }
+        try {if(Test-Path -LiteralPath $installedRelease) {
+            $releaseState=Get-Content -LiteralPath $installedRelease -Raw | ConvertFrom-Json
+            if($releaseState.version -match '^v?\d+(\.\d+){0,2}(-(alpha|test)(\.\d+)?)?$') {
+                @{version=$releaseState.version;completedUtc=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $receipt -Encoding UTF8
+            }
+        }} catch {Add-Content -Encoding UTF8 -LiteralPath $log -Value 'Update installed; completion notification could not be recorded.'}
+    } elseif(Test-Path -LiteralPath $receipt) {
+        Remove-Item -LiteralPath $receipt -Force
     }
+    Show-UpdateProgress 'Launcher updated. Launching game...' 1 1
     if($displayState) {
+        Show-UpdateProgress 'Your current installation has been updated.' 1 1 'done'
         if($displayProcess) {[void]$displayProcess.WaitForExit(5000);if($displayProcess.HasExited -and (Test-Path -LiteralPath $displayFile)){Remove-Item -LiteralPath $displayFile -Force}}
     }
     if($updateForm) {$updateForm.Close();$updateForm.Dispose();$script:updateForm=$null}
+    if(!$NoLaunch) {
+        Start-Process -FilePath $launcher -WorkingDirectory $target -WindowStyle Normal
+    }
 } catch {
     if($displayState) {Show-UpdateProgress 'Update could not finish. See logs/update-install.log.' 0 0 'failed'}
     if($updateForm) {$updateForm.Close();$updateForm.Dispose();$script:updateForm=$null}
     Add-Content -Encoding UTF8 -LiteralPath $log -Value ($_.Exception.ToString())
-    if($NoLaunch) {throw}
-    Add-Type -AssemblyName System.Windows.Forms
-    if(!$displayProcess){[Windows.Forms.MessageBox]::Show('The update could not be installed. Your existing installation is retained. See logs\update-install.log.','DWG2 Update') | Out-Null}
+    if($installStarted) {
+        if($NoLaunch) {throw}
+        Add-Type -AssemblyName System.Windows.Forms
+        [Windows.Forms.MessageBox]::Show('The update could not be installed. Your existing installation is retained. The update package was not deleted — you can retry. See logs\update-install.log.','DWG2 Update') | Out-Null
+    } else {
+        if($NoLaunch) {throw}
+        Add-Type -AssemblyName System.Windows.Forms
+        [Windows.Forms.MessageBox]::Show('The update could not be installed. Your existing installation is retained. See logs\update-install.log.','DWG2 Update') | Out-Null
+    }
     exit 1
 }

@@ -1,3 +1,6 @@
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include "automatic_save.h"
 #include "camera_control.h"
 #include "camera_refresh.h"
@@ -6,6 +9,15 @@
 #include "keyboard_art.h"
 #include "player_control_settings.h"
 #include "prompt_control.h"
+#if __has_include(<stb_image.h>)
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_PNG
+#define STBI_NO_STDIO
+#define STBI_NO_FAILURE_STRINGS
+#include <stb_image.h>
+#include "prompt_packs.h"
+#define DWG2_HAS_PROMPT_PACK_PNG_TESTS 1
+#endif
 #include "recomp_menu_layout.h"
 #include "runtime_pause.h"
 #include "startup_load.h"
@@ -149,21 +161,143 @@ int main() {
   CHECK(dwg2::xma::FindNextPacketReadOffset(block.data(), 13, kPkts) ==
         dwg2::xma::kBitsPerPacketHeader);
 
-  // Prompt auto-detection and explicit choice override checks.
+  // Prompt auto-detection, SDL3 controller classification, and explicit override checks.
+  dwg2::prompts::has_input_activity.store(false);
+  dwg2::prompts::controller_seeded.store(false);
   dwg2::prompts::choice.store(0);
   dwg2::prompts::last_device.store(1);
-  CHECK(dwg2::prompts::Effective() == 1);
-  dwg2::prompts::last_device.store(2);
-  CHECK(dwg2::prompts::Effective() == 2);
-  dwg2::prompts::last_device.store(3);
-  CHECK(dwg2::prompts::Effective() == 3);
-  dwg2::prompts::choice.store(2);
-  dwg2::prompts::last_device.store(1);
-  CHECK(dwg2::prompts::Effective() == 2);
-  dwg2::prompts::last_device.store(3);
-  CHECK(dwg2::prompts::Effective() == 3);
+  dwg2::prompts::last_controller.store(1);
+  dwg2::prompts::SeedConnectedController(dwg2::prompts::kXboxSeries);
+  CHECK(dwg2::prompts::Effective() == dwg2::prompts::kXboxSeries);
+  CHECK(dwg2::prompts::last_controller.load() == dwg2::prompts::kXboxSeries);
+  // Seeding happens at most once until real input activity.
+  dwg2::prompts::SeedConnectedController(dwg2::prompts::kPs5);
+  CHECK(dwg2::prompts::Effective() == dwg2::prompts::kXboxSeries);
+  CHECK(dwg2::prompts::NotifyActivity(dwg2::prompts::kPs4, true));
+  CHECK(dwg2::prompts::Effective() == dwg2::prompts::kPs4);
+  // Once input activity happened, SeedConnectedController does not clobber active device.
+  dwg2::prompts::controller_seeded.store(false);
+  dwg2::prompts::SeedConnectedController(dwg2::prompts::kSwitch);
+  CHECK(dwg2::prompts::Effective() == dwg2::prompts::kPs4);
+  CHECK(dwg2::prompts::NotifyActivity(dwg2::prompts::kKeyboard, false));
+  CHECK(dwg2::prompts::Effective() == dwg2::prompts::kKeyboard);
+  // Manual choice honors explicit selection 1..8 (including Keyboard).
+  dwg2::prompts::choice.store(dwg2::prompts::kPs5);
+  CHECK(dwg2::prompts::Effective() == dwg2::prompts::kPs5);
+  dwg2::prompts::choice.store(dwg2::prompts::kSwitch);
+  CHECK(dwg2::prompts::Effective() == dwg2::prompts::kSwitch);
+  dwg2::prompts::choice.store(dwg2::prompts::kKeyboard);
+  CHECK(dwg2::prompts::Effective() == dwg2::prompts::kKeyboard);
+  CHECK(dwg2::prompts::ClassifyGamepadStyle(6, 6, 0x054C, 0x0CE6, true, "DualSense") == dwg2::prompts::kPs5);
+  CHECK(dwg2::prompts::ClassifyGamepadStyle(0, 0, 0x054C, 0x0DF2, true, "DualSense Edge") == dwg2::prompts::kPs5);
+  CHECK(dwg2::prompts::ClassifyGamepadStyle(5, 5, 0x054C, 0x05C4, false, "DualShock 4") == dwg2::prompts::kPs4);
+  CHECK(dwg2::prompts::ClassifyGamepadStyle(4, 4, 0x054C, 0x0268, false, "PS3") == dwg2::prompts::kPs3);
+  CHECK(dwg2::prompts::ClassifyGamepadStyle(7, 7, 0x057E, 0x2009, true, "Switch Pro Controller") == dwg2::prompts::kSwitch);
+  CHECK(dwg2::prompts::ClassifyGamepadStyle(10, 10, 0x057E, 0x2006, true, "Joy-Con Pair") == dwg2::prompts::kSwitch);
+  CHECK(dwg2::prompts::ClassifyGamepadStyle(3, 3, 0x045E, 0x0B12, true, "Xbox Wireless Controller") == dwg2::prompts::kXboxSeries);
+  CHECK(dwg2::prompts::ClassifyGamepadStyle(3, 3, 0x045E, 0x0B13, true, "Xbox Series BLE") == dwg2::prompts::kXboxSeries);
+  CHECK(dwg2::prompts::ClassifyGamepadStyle(3, 3, 0x0F0D, 0x0100, true, "Third-party Series") == dwg2::prompts::kXboxSeries);
+  CHECK(dwg2::prompts::ClassifyGamepadStyle(3, 3, 0x045E, 0x02EA, false, "Xbox One S") == dwg2::prompts::kXboxOne);
+  CHECK(dwg2::prompts::ClassifyGamepadStyle(3, 3, 0x045E, 0x0B00, false, "Xbox Elite 2") == dwg2::prompts::kXboxOne);
+  CHECK(dwg2::prompts::ClassifyGamepadStyle(2, 2, 0x045E, 0x028E, false, "X360") == dwg2::prompts::kXbox360);
+  CHECK(dwg2::prompts::ClassifyGamepadStyle(1, 1, 0x1234, 0x5678, false, "Generic XInput") == dwg2::prompts::kXbox360);
   dwg2::prompts::choice.store(0);
   dwg2::prompts::last_device.store(1);
+  dwg2::prompts::last_controller.store(1);
+  dwg2::prompts::has_input_activity.store(false);
+  dwg2::prompts::controller_seeded.store(false);
+
+#ifdef DWG2_HAS_PROMPT_PACK_PNG_TESTS
+  {
+    auto decode_png = [](const uint8_t* data, size_t sz, int& w, int& h) -> std::vector<uint8_t> {
+      w = h = 0;
+      if (!data || sz == 0) return {};
+      int ch = 0;
+      stbi_uc* p = stbi_load_from_memory(data, int(sz), &w, &h, &ch, 4);
+      if (!p) return {};
+      std::vector<uint8_t> out(p, p + size_t(w) * size_t(h) * 4);
+      stbi_image_free(p);
+      return out;
+    };
+    CHECK(dwg2::prompt_packs::kPackAssetCount == 317);
+    for (size_t i = 0; i < dwg2::prompt_packs::kPackAssetCount; ++i) {
+      const auto& a = dwg2::prompt_packs::kPackAssets[i];
+      if (i > 0) CHECK(std::string_view(dwg2::prompt_packs::kPackAssets[i - 1].path) < std::string_view(a.path));
+      CHECK(dwg2::prompt_packs::FindEmbeddedAsset(a.path) == &a);
+      int w = 0, h = 0;
+      auto rgba = decode_png(dwg2::prompt_packs::kPackPngBlob + a.offset, a.size, w, h);
+      CHECK(w > 0 && h > 0 && rgba.size() == size_t(w) * size_t(h) * 4);
+    }
+
+    auto has_nonzero_alpha = [](const std::vector<uint8_t>& buf, int aw, int x, int y, int w, int h) {
+      for (int yy = 0; yy < h; ++yy)
+        for (int xx = 0; xx < w; ++xx)
+          if (buf[(size_t(y + yy) * size_t(aw) + size_t(x + xx)) * 4 + 3] != 0) return true;
+      return false;
+    };
+    dwg2::keyboard::Bindings def_kb{}, def_kb_alt{};
+    const auto kb_prof = dwg2::input::Defaults(0);
+    for (int i = 0; i < 25; ++i) {
+      def_kb[i] = kb_prof.bind[i].kind == 1 ? unsigned(kb_prof.bind[i].code) : 0u;
+      def_kb_alt[i] = kb_prof.alternate[i].kind == 1 ? unsigned(kb_prof.alternate[i].code) : 0u;
+    }
+    dwg2::prompt_packs::GamepadBindings def_gp{};
+    const auto xb_prof = dwg2::input::Defaults(2);
+    for (int i = 0; i < 25; ++i) {
+      def_gp.kind[i] = xb_prof.bind[i].kind;
+      def_gp.code[i] = xb_prof.bind[i].code;
+      def_gp.sign[i] = xb_prof.bind[i].sign;
+    }
+
+    for (int st : {1, 2, 3, 4, 5, 6, 7, 8}) {
+      std::vector<uint8_t> k2(size_t(512) * 256 * 4, 0);
+      k2[(size_t(150) * 512 + 10) * 4 + 3] = 200; // simulated backing inside (0,144,108,108)
+      CHECK(dwg2::prompt_packs::ApplyPromptAtlas(k2, 512, 256, 2, st, decode_png, {}, def_kb, def_kb_alt, def_gp));
+      CHECK(k2[(size_t(150) * 512 + 10) * 4 + 3] == 200);
+      if (st != 1) CHECK(has_nonzero_alpha(k2, 512, 72, 72, 72, 72));
+
+      std::vector<uint8_t> k3(size_t(1024) * 512 * 4, 0);
+      CHECK(dwg2::prompt_packs::ApplyPromptAtlas(k3, 1024, 512, 3, st, decode_png, {}, def_kb, def_kb_alt, def_gp));
+      if (st != 1) CHECK(has_nonzero_alpha(k3, 1024, 422, 177, 53, 27));
+
+      std::vector<uint8_t> k4(size_t(1024) * 512 * 4, 0);
+      CHECK(dwg2::prompt_packs::ApplyPromptAtlas(k4, 1024, 512, 4, st, decode_png, {}, def_kb, def_kb_alt, def_gp));
+      if (st == 2 || st == 3 || st == 6 || st == 7 || st == 8) {
+        CHECK(has_nonzero_alpha(k4, 1024, 688, 170, 44, 27));
+      }
+
+      std::vector<uint8_t> k5(131072, 0x5A);
+      CHECK(dwg2::prompt_packs::ApplyControllerDiagram(st, decode_png, {}, def_kb, def_kb_alt, k5));
+      CHECK(k5.size() == 131072);
+      if (st == 1) CHECK(k5[0] == 0x5A);
+      else CHECK(k5[0] != 0x5A || k5[8] != 0x5A);
+    }
+
+    // Dynamic remapping checks: Keyboard wide key + Switch/Xbox360/PS5 remap + unbound clear.
+    auto remap_gp = def_gp;
+    remap_gp.kind[0] = 2; remap_gp.code[0] = 9;   // A -> LB
+    remap_gp.kind[2] = 0; remap_gp.code[2] = 0;   // X -> Unbound
+    remap_gp.kind[9] = 2; remap_gp.code[9] = 20;  // Start -> Touchpad
+    std::vector<uint8_t> ps5_k2(size_t(512) * 256 * 4, 123);
+    CHECK(dwg2::prompt_packs::ApplyPromptAtlas(ps5_k2, 512, 256, 2, dwg2::prompts::kPs5, decode_png, {}, def_kb, def_kb_alt, remap_gp));
+    CHECK(ps5_k2[(size_t(0) * 512 + 396) * 4 + 3] == 0); // unbound X cleared to transparent
+    std::vector<uint8_t> ps5_k3(size_t(1024) * 512 * 4, 0);
+    CHECK(dwg2::prompt_packs::ApplyPromptAtlas(ps5_k3, 1024, 512, 3, dwg2::prompts::kPs5, decode_png, {}, def_kb, def_kb_alt, remap_gp));
+    CHECK(has_nonzero_alpha(ps5_k3, 1024, 422, 177, 53, 27));
+
+    auto remap_kb = def_kb;
+    remap_kb[0] = 'K';
+    remap_kb[9] = VK_TAB;
+    remap_kb[2] = 'L' | 0x100u; // Shift+L -> Keycap fallback
+    std::vector<uint8_t> kb_k3(size_t(1024) * 512 * 4, 0);
+    CHECK(dwg2::prompt_packs::ApplyPromptAtlas(kb_k3, 1024, 512, 3, dwg2::prompts::kKeyboard, decode_png, {}, remap_kb, def_kb_alt, def_gp));
+    CHECK(has_nonzero_alpha(kb_k3, 1024, 297, 249, 28, 27));
+    CHECK(has_nonzero_alpha(kb_k3, 1024, 422, 177, 53, 27));
+    CHECK(has_nonzero_alpha(kb_k3, 1024, 705, 165, 28, 27));
+    std::vector<uint8_t> kb_k5(131072, 0);
+    CHECK(dwg2::prompt_packs::ApplyControllerDiagram(dwg2::prompts::kKeyboard, decode_png, {}, remap_kb, def_kb_alt, kb_k5));
+  }
+#endif
 
   // Keyboard diagram BC3 encode and prompt-atlas stamping checks.
   dwg2::keyboard::Bindings kb_primary{};
@@ -378,19 +512,47 @@ int main() {
     kb_tap(13);
     CHECK(m_restarts == 1 && dwg2::recomp_menu::IsOpen());
     CHECK(dwg2::recomp_menu::Snapshot(act).toast == "Restart unavailable.");
-    kb_tap(40);
+    // Row-1 left/right wrap + up/down row navigation.
+    kb_tap(39);  // Restart -> Pause
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kPause);
     kb_tap(13);
     CHECK(m_paused && dwg2::recomp_menu::Snapshot(act).paused);
     kb_tap(13);
     CHECK(!m_paused && dwg2::recomp_menu::IsOpen());
-    kb_tap(38);
-    kb_tap(38);
+    kb_tap(39);  // Pause -> Quit Game
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kQuitGame);
+    kb_tap(39);  // Quit Game -> Restart (wrap right)
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kRestart);
+    kb_tap(37);  // Restart -> Quit Game (wrap left)
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kQuitGame);
+    kb_tap(37);  // Quit Game -> Pause
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kPause);
+    kb_tap(40);  // Pause -> Fullscreen (row 2)
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kFullscreen);
+    kb_tap(38);  // Fullscreen -> Restart
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kRestart);
+    kb_tap(37);  // Restart -> Quit Game
+    kb_tap(38);  // Quit Game -> Check for Updates (bottom row)
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kCheckUpdates);
     kb_tap(13);
     CHECK(m_update_checks == 1 && dwg2::recomp_menu::Snapshot(act).toast == "Checking for updates...");
-    kb_tap(40);
+    kb_tap(40);  // Check for Updates -> Restart (wrap down)
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kRestart);
+    kb_tap(40);  // Restart -> Fullscreen
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kFullscreen);
+    kb_tap(38);  // Fullscreen -> Restart
+    kb_tap(39);  // Restart -> Pause
+    kb_tap(38);  // Pause -> Check for Updates
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kCheckUpdates);
+    kb_tap(40);  // Check for Updates -> Restart
+    kb_tap(38);  // Restart -> Check for Updates (wrap up)
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kCheckUpdates);
+    kb_tap(40);  // Back to Restart
 
-    // Walk all 13 items and verify wrap back to kRestart.
-    for (int i = 0; i < dwg2::recomp_menu::kMainItemCount; ++i) {
+    // Walk all 11 vertical rows (Restart, Fullscreen..CheckUpdates) and verify wrap back to Restart.
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kRestart);
+    kb_tap(40);
+    for (int i = dwg2::recomp_menu::kFullscreen; i < dwg2::recomp_menu::kMainItemCount; ++i) {
       CHECK(dwg2::recomp_menu::Snapshot(act).focus == i);
       kb_tap(40);  // Down
     }
@@ -424,11 +586,17 @@ int main() {
     kb_tap(39);  // Right -> On
     CHECK(m_turbo);
     kb_tap(40);  // Button Prompts
-    kb_tap(13);  // 0 -> 1
+    for (int expected_style : {1, 4, 5, 7, 6, 2, 8, 3, 0}) {
+      kb_tap(13);
+      CHECK(m_prompts == expected_style);
+    }
+    kb_tap(13);
     CHECK(m_prompts == 1);
 
-    // Inline Quit Yes/No (default No).
-    while (dwg2::recomp_menu::Snapshot(act).focus != dwg2::recomp_menu::kQuitGame) kb_tap(38);
+    // Inline Quit Yes/No (default No): Up reaches Row 1 (Restart), Left wraps to Quit Game.
+    while (dwg2::recomp_menu::Snapshot(act).focus != dwg2::recomp_menu::kRestart) kb_tap(38);
+    kb_tap(37);
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kQuitGame);
     kb_tap(13);  // Open ConfirmQuit
     auto snap = dwg2::recomp_menu::Snapshot(act);
     CHECK(snap.view == dwg2::recomp_menu::View::kConfirmQuit && !snap.confirm_quit_yes);
@@ -552,6 +720,8 @@ int main() {
     snap.open = true;
     snap.fov = 100;
     snap.resolution_pending = 3;
+    snap.prompt_choice = 0;
+    snap.prompt_style = dwg2::prompts::kXboxSeries; // Longest "Auto (Xbox Series)" label
     snap.toast = "Could not save settings.ini. The previous settings are retained.";
     snap.version_text = std::string(64, 'W');
     snap.working_profiles[0] = dwg2::input::Defaults(0);

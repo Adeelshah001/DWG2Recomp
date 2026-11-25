@@ -1,0 +1,18 @@
+--- a/include/rex/system/xmemory.h
++++ b/include/rex/system/xmemory.h
+@@ -323,6 +323,7 @@
+   uint32_t GetPhysicalAddress(uint32_t address) const;
+ 
+  protected:
++  void ClearWatchFlags(uint32_t heap_relative_address, uint32_t length);
+   bool IsHostPageWriteWatched(uint32_t host_page_number) const override;
+ 
+   // Allocation on these heaps delegates to parent_heap_, whose own reconcile
+@@ -509,6 +510,7 @@
+   bool TriggerPhysicalMemoryCallbacks(
+       std::unique_lock<std::recursive_mutex> global_lock_locked_once, uint32_t virtual_address,
+       uint32_t length, bool is_write, bool unwatch_exact_range, bool unprotect = true);
++  void InvalidatePhysicalMemoryRange(uint32_t physical_address, uint32_t length);
+ 
+   // Allocates virtual memory from the 'system' heap.
+   // System memory is kept separate from game memory but is still accessible

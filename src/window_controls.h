@@ -7,6 +7,11 @@
 #include <filesystem>
 #include <map>
 #include <rex/ui/window_sdl.h>
+#include "prompt_control.h"
+extern "C" __declspec(dllexport) int Dwg2SeedConnectedController(int style) {
+  dwg2::prompts::SeedConnectedController(style);
+  return dwg2::prompts::Effective();
+}
 #include "input_ui.h"
 #include "recomp_menu_state.h"
 #include "build_version.h"
@@ -169,7 +174,7 @@ inline bool ApplyFov(HWND hwnd,int value,bool show_error=true) {
   return false;
 }
 inline bool ApplyPrompts(HWND hwnd,rex::ui::WindowSDL* owner,int choice,bool hud,bool show_error=true) {
-  if(choice<0||choice>2)return false;
+  if(choice<0||choice>dwg2::prompts::kMaxStyle)return false;
   if(!SavePrompts(choice,hud)){if(show_error)MessageBoxW(hwnd,L"Could not save prompt/display settings. Your previous settings are retained.",L"DWG2",MB_ICONERROR);return false;}
   dwg2::prompts::choice.store(choice);dwg2::prompts::hud_correction.store(hud);Sync(owner);return true;
 }
@@ -267,17 +272,19 @@ inline void PollRecompMenu(HWND hwnd,State* s) {
   int count=0;auto* ids=SDL_GetGamepads(&count);
   bool has_active_gp=false;
   dwg2::input::Raw active_gp_raw{};
-  int active_gp_family=s->last_gp_family;
+  int active_gp_style=dwg2::prompts::kXbox360;
   unsigned long long active_gp_id=0;
   bool gp_open_trigger=false;
   dwg2::input::Raw trigger_gp_raw{};
-  int trigger_gp_family=2;
+  int trigger_gp_style=dwg2::prompts::kXbox360;
   unsigned long long trigger_gp_id=0;
   if(ids) {
     for(int i=0;i<count&&i<16;++i) {
       auto* pad=SDL_OpenGamepad(ids[i]);if(!pad)continue;
       const auto id=static_cast<unsigned long long>(SDL_GetGamepadID(pad));
       const int family=dwg2::input::Family(pad);
+      const int style=dwg2::input::PromptStyle(pad);
+      if(SDL_GamepadConnected(pad))dwg2::prompts::SeedConnectedController(style);
       const auto raw=dwg2::input::ReadPad(pad);
       SDL_CloseGamepad(pad);
       const auto gp_prof=dwg2::input::Get(family);
@@ -285,14 +292,14 @@ inline void PollRecompMenu(HWND hwnd,State* s) {
                            dwg2::input::Level(gp_prof.alternate[dwg2::input::RecompMenu],raw,gp_prof.deadzone)>=0.65f;
       bool& prev=s->prev_gp_menu_toggle[id];
       if(gp_toggle&&!prev&&!gp_open_trigger) {
-        gp_open_trigger=true;trigger_gp_raw=raw;trigger_gp_family=family;trigger_gp_id=id;
+        gp_open_trigger=true;trigger_gp_raw=raw;trigger_gp_style=style;trigger_gp_id=id;
       }
       prev=gp_toggle;
       bool held=false;
       for(bool b:raw.buttons)held|=b;
       for(float a:raw.axes)held|=std::abs(a)>0.25f;
       if(held&&!has_active_gp) {
-        has_active_gp=true;active_gp_raw=raw;active_gp_family=family;active_gp_id=id;s->last_gp_family=family;
+        has_active_gp=true;active_gp_raw=raw;active_gp_style=style;active_gp_id=id;s->last_gp_family=family;
       }
     }
     SDL_free(ids);
@@ -304,12 +311,12 @@ inline void PollRecompMenu(HWND hwnd,State* s) {
       dwg2::input::ObservePromptDevice(0x100000000ull,3,kb_raw);
       dwg2::recomp_menu::SetOpen(true,true);
     } else if(gp_open_trigger) {
-      dwg2::input::ObservePromptDevice(trigger_gp_id,trigger_gp_family==1?2:1,trigger_gp_raw);
+      dwg2::input::ObservePromptDevice(trigger_gp_id,trigger_gp_style,trigger_gp_raw);
       dwg2::recomp_menu::SetOpen(true,true);
     }
   } else {
     dwg2::input::ObservePromptDevice(0x100000000ull,3,kb_raw);
-    if(has_active_gp)dwg2::input::ObservePromptDevice(active_gp_id,active_gp_family==1?2:1,active_gp_raw);
+    if(has_active_gp)dwg2::input::ObservePromptDevice(active_gp_id,active_gp_style,active_gp_raw);
     const auto act=BuildMenuActions(hwnd,s);
     const uint64_t now_ms=GetTickCount64();
     dwg2::recomp_menu::HandleKeyboard(kb_raw,now_ms,act);
@@ -350,7 +357,7 @@ inline LRESULT CALLBACK Procedure(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
     return 0;
   }
   if(msg==WM_APP+0x219) {
-    if(wp<=2){ApplyPrompts(hwnd,s->owner,int(wp),dwg2::prompts::hud_correction.load(),false);RequestRecompMenuPaint(s);}
+    if(wp<=dwg2::prompts::kMaxStyle){ApplyPrompts(hwnd,s->owner,int(wp),dwg2::prompts::hud_correction.load(),false);RequestRecompMenuPaint(s);}
     return 0;
   }
   if(msg==WM_APP+0x21A) {
@@ -470,7 +477,7 @@ inline void Install(rex::ui::WindowSDL* owner, SDL_Window* sdl) {
    const int fps_val=dwg2::video::NormalizeFps(dwg2::settings::Integer(preferences,"video","presentation_fps",fallback_fps,0,240));
    dwg2::video::present_fps.store(fps_val);
    dwg2::video::present_fps_initialized.store(true);}
-  dwg2::prompts::choice.store(dwg2::settings::Integer(preferences,"prompts","style",0,0,2));
+  dwg2::prompts::choice.store(dwg2::settings::Integer(preferences,"prompts","style",0,0,dwg2::prompts::kMaxStyle));
   dwg2::prompts::hud_correction.store(dwg2::settings::Integer(preferences,"prompts","hud_correction",1,0,1)!=0);
   Sync(owner);
   {int scale=dwg2::settings::Integer(preferences,"graphics","resolution_scale",1,1,3);if(scale<1||scale>3)scale=1;graphics_scale.store(scale);}

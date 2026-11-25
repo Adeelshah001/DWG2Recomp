@@ -1,0 +1,338 @@
+--- a/src/system/xmemory.cpp
++++ b/src/system/xmemory.cpp
+@@ -609,6 +609,11 @@
+           reinterpret_cast<uintptr_t>(host_address) & ~(uintptr_t(host_page_size - 1));
+       if (rex::memory::Protect(reinterpret_cast<void*>(page_base), host_page_size,
+                                rex::memory::PageAccess::kReadWrite, nullptr)) {
++        uint32_t physical_address = GetPhysicalAddress(virtual_address);
++        if (physical_address != UINT32_MAX) {
++          InvalidatePhysicalMemoryRange(physical_address & ~uint32_t(host_page_size - 1),
++                                        uint32_t(host_page_size));
++        }
+         REXSYS_WARN(
+             "Recovered stale physical page protection for guest {:08X} (host {:016X}, "
+             "guest_protect {:08X})",
+@@ -654,6 +659,16 @@
+                                            length, is_write, unwatch_exact_range, unprotect);
+   }
+   return false;
++}
++
++void Memory::InvalidatePhysicalMemoryRange(uint32_t physical_address, uint32_t length) {
++  if (!length) {
++    return;
++  }
++  auto lock = global_critical_region_.Acquire();
++  for (auto invalidation_callback : physical_memory_invalidation_callbacks_) {
++    invalidation_callback->first(invalidation_callback->second, physical_address, length, true);
++  }
+ }
+ 
+ void* Memory::RegisterPhysicalMemoryInvalidationCallback(
+@@ -1901,28 +1916,36 @@
+   size = rex::round_up(size, page_size_);
+   alignment = rex::round_up(alignment, page_size_);
+ 
+-  // Global critical region before heap_mutex_ - see
+-  // AcquireHostPageReconcileLock for why the order matters.
+-  auto global_lock = AcquireHostPageReconcileLock();
+-  std::lock_guard<std::recursive_mutex> heap_lock(heap_mutex_);
+-
+-  // Allocate from parent heap (gets our physical address in 0-512mb).
+-  uint32_t parent_heap_start = GetPhysicalAddress(heap_base_);
+-  uint32_t parent_heap_end = GetPhysicalAddress(heap_base_ + (heap_size_ - 1));
+-  uint32_t parent_address;
+-  if (!parent_heap_->AllocRange(parent_heap_start, parent_heap_end, size, alignment,
+-                                allocation_type, protect, top_down, &parent_address)) {
+-    REXSYS_ERROR("PhysicalHeap::Alloc unable to alloc physical memory in parent heap");
+-    return false;
+-  }
+-
+-  // Given the address we've reserved in the parent heap, pin that here.
+-  // Shouldn't be possible for it to be allocated already.
+-  uint32_t address = heap_base_ + parent_address - parent_heap_start;
+-  if (!BaseHeap::AllocFixed(address, size, alignment, allocation_type, protect)) {
+-    REXSYS_ERROR("PhysicalHeap::Alloc unable to pin physical memory in physical heap");
+-    // TODO(benvanik): don't leak parent memory.
+-    return false;
++  uint32_t parent_address = 0;
++  uint32_t address = 0;
++  {
++    // Global critical region before heap_mutex_ - see
++    // AcquireHostPageReconcileLock for why the order matters.
++    auto global_lock = AcquireHostPageReconcileLock();
++    std::lock_guard<std::recursive_mutex> heap_lock(heap_mutex_);
++
++    // Allocate from parent heap (gets our physical address in 0-512mb).
++    uint32_t parent_heap_start = GetPhysicalAddress(heap_base_);
++    uint32_t parent_heap_end = GetPhysicalAddress(heap_base_ + (heap_size_ - 1));
++    if (!parent_heap_->AllocRange(parent_heap_start, parent_heap_end, size, alignment,
++                                  allocation_type, protect, top_down, &parent_address)) {
++      REXSYS_ERROR("PhysicalHeap::Alloc unable to alloc physical memory in parent heap");
++      return false;
++    }
++
++    // Given the address we've reserved in the parent heap, pin that here.
++    // Shouldn't be possible for it to be allocated already.
++    address = heap_base_ + parent_address - parent_heap_start;
++    if (!BaseHeap::AllocFixed(address, size, alignment, allocation_type, protect)) {
++      REXSYS_ERROR("PhysicalHeap::Alloc unable to pin physical memory in physical heap");
++      // TODO(benvanik): don't leak parent memory.
++      return false;
++    }
++  }
++  {
++    auto inv_lock = global_critical_region_.Acquire();
++    ClearWatchFlags(address - heap_base_, size);
++    memory_->InvalidatePhysicalMemoryRange(parent_address, size);
+   }
+   *out_address = address;
+   return true;
+@@ -1934,28 +1957,37 @@
+   size = rex::round_up(size, page_size_);
+   alignment = rex::round_up(alignment, page_size_);
+ 
+-  // Global critical region before heap_mutex_ - see
+-  // AcquireHostPageReconcileLock for why the order matters.
+-  auto global_lock = AcquireHostPageReconcileLock();
+-  std::lock_guard<std::recursive_mutex> heap_lock(heap_mutex_);
+-
+-  // Allocate from parent heap (gets our physical address in 0-512mb).
+-  // NOTE: this can potentially overwrite heap contents if there are already
+-  // committed pages in the requested physical range.
+-  // TODO(benvanik): flag for ensure-not-committed?
+-  uint32_t parent_base_address = GetPhysicalAddress(base_address);
+-  if (!parent_heap_->AllocFixed(parent_base_address, size, alignment, allocation_type, protect)) {
+-    REXSYS_ERROR("PhysicalHeap::Alloc unable to alloc physical memory in parent heap");
+-    return false;
+-  }
+-
+-  // Given the address we've reserved in the parent heap, pin that here.
+-  // Shouldn't be possible for it to be allocated already.
+-  uint32_t address = heap_base_ + parent_base_address - GetPhysicalAddress(heap_base_);
+-  if (!BaseHeap::AllocFixed(address, size, page_size_, allocation_type, protect)) {
+-    REXSYS_ERROR("PhysicalHeap::Alloc unable to pin physical memory in physical heap");
+-    // TODO(benvanik): don't leak parent memory.
+-    return false;
++  uint32_t parent_base_address = 0;
++  uint32_t address = 0;
++  {
++    // Global critical region before heap_mutex_ - see
++    // AcquireHostPageReconcileLock for why the order matters.
++    auto global_lock = AcquireHostPageReconcileLock();
++    std::lock_guard<std::recursive_mutex> heap_lock(heap_mutex_);
++
++    // Allocate from parent heap (gets our physical address in 0-512mb).
++    // NOTE: this can potentially overwrite heap contents if there are already
++    // committed pages in the requested physical range.
++    // TODO(benvanik): flag for ensure-not-committed?
++    parent_base_address = GetPhysicalAddress(base_address);
++    if (!parent_heap_->AllocFixed(parent_base_address, size, alignment, allocation_type, protect)) {
++      REXSYS_ERROR("PhysicalHeap::Alloc unable to alloc physical memory in parent heap");
++      return false;
++    }
++
++    // Given the address we've reserved in the parent heap, pin that here.
++    // Shouldn't be possible for it to be allocated already.
++    address = heap_base_ + parent_base_address - GetPhysicalAddress(heap_base_);
++    if (!BaseHeap::AllocFixed(address, size, page_size_, allocation_type, protect)) {
++      REXSYS_ERROR("PhysicalHeap::Alloc unable to pin physical memory in physical heap");
++      // TODO(benvanik): don't leak parent memory.
++      return false;
++    }
++  }
++  {
++    auto inv_lock = global_critical_region_.Acquire();
++    ClearWatchFlags(address - heap_base_, size);
++    memory_->InvalidatePhysicalMemoryRange(parent_base_address, size);
+   }
+ 
+   return true;
+@@ -1970,30 +2002,38 @@
+   size = rex::round_up(size, page_size_);
+   alignment = rex::round_up(alignment, page_size_);
+ 
+-  // Global critical region before heap_mutex_ - see
+-  // AcquireHostPageReconcileLock for why the order matters.
+-  auto global_lock = AcquireHostPageReconcileLock();
+-  std::lock_guard<std::recursive_mutex> heap_lock(heap_mutex_);
+-
+-  // Allocate from parent heap (gets our physical address in 0-512mb).
+-  low_address = std::max(heap_base_, low_address);
+-  high_address = std::min(heap_base_ + (heap_size_ - 1), high_address);
+-  uint32_t parent_low_address = GetPhysicalAddress(low_address);
+-  uint32_t parent_high_address = GetPhysicalAddress(high_address);
+-  uint32_t parent_address;
+-  if (!parent_heap_->AllocRange(parent_low_address, parent_high_address, size, alignment,
+-                                allocation_type, protect, top_down, &parent_address)) {
+-    REXSYS_ERROR("PhysicalHeap::Alloc unable to alloc physical memory in parent heap");
+-    return false;
+-  }
+-
+-  // Given the address we've reserved in the parent heap, pin that here.
+-  // Shouldn't be possible for it to be allocated already.
+-  uint32_t address = heap_base_ + parent_address - GetPhysicalAddress(heap_base_);
+-  if (!BaseHeap::AllocFixed(address, size, page_size_, allocation_type, protect)) {
+-    REXSYS_ERROR("PhysicalHeap::Alloc unable to pin physical memory in physical heap");
+-    // TODO(benvanik): don't leak parent memory.
+-    return false;
++  uint32_t parent_address = 0;
++  uint32_t address = 0;
++  {
++    // Global critical region before heap_mutex_ - see
++    // AcquireHostPageReconcileLock for why the order matters.
++    auto global_lock = AcquireHostPageReconcileLock();
++    std::lock_guard<std::recursive_mutex> heap_lock(heap_mutex_);
++
++    // Allocate from parent heap (gets our physical address in 0-512mb).
++    low_address = std::max(heap_base_, low_address);
++    high_address = std::min(heap_base_ + (heap_size_ - 1), high_address);
++    uint32_t parent_low_address = GetPhysicalAddress(low_address);
++    uint32_t parent_high_address = GetPhysicalAddress(high_address);
++    if (!parent_heap_->AllocRange(parent_low_address, parent_high_address, size, alignment,
++                                  allocation_type, protect, top_down, &parent_address)) {
++      REXSYS_ERROR("PhysicalHeap::Alloc unable to alloc physical memory in parent heap");
++      return false;
++    }
++
++    // Given the address we've reserved in the parent heap, pin that here.
++    // Shouldn't be possible for it to be allocated already.
++    address = heap_base_ + parent_address - GetPhysicalAddress(heap_base_);
++    if (!BaseHeap::AllocFixed(address, size, page_size_, allocation_type, protect)) {
++      REXSYS_ERROR("PhysicalHeap::Alloc unable to pin physical memory in physical heap");
++      // TODO(benvanik): don't leak parent memory.
++      return false;
++    }
++  }
++  {
++    auto inv_lock = global_critical_region_.Acquire();
++    ClearWatchFlags(address - heap_base_, size);
++    memory_->InvalidatePhysicalMemoryRange(parent_address, size);
+   }
+   *out_address = address;
+   return true;
+@@ -2101,28 +2141,21 @@
+   uint8_t* protect_base = membase_ + heap_base_;
+   uint32_t protect_system_page_first = UINT32_MAX;
+   auto global_lock = global_critical_region_.Acquire();
++  auto apply_protect_run = [&](uint32_t run_first, uint32_t run_end) {
++    uint32_t run_pages = run_end - run_first;
++    if (!rex::memory::Protect(protect_base + run_first * system_page_size_,
++                              run_pages * system_page_size_, protect_access)) {
++      REXSYS_ERROR("PhysicalHeap::EnableAccessCallbacks failed to protect {:08X} size {:08X}",
++                   heap_base_ + run_first * system_page_size_, run_pages * system_page_size_);
++      return;
++    }
++    if (enable_invalidation_notifications) {
++      for (uint32_t p = run_first; p < run_end; ++p) {
++        system_page_flags_[p >> 6].notify_on_invalidation |= (uint64_t(1) << (p & 63));
++      }
++    }
++  };
+   for (uint32_t i = system_page_first; i <= system_page_last; ++i) {
+-    // Check if need to enable callbacks for the page and raise its protection.
+-    //
+-    // If enabling invalidation notifications:
+-    // - Page writable and not watched for changes yet - protect and enable
+-    //   invalidation notifications.
+-    // - Page seen as writable by the guest, but only needs data providers -
+-    //   just set the bits to enable invalidation notifications (already has
+-    //   even stricter protection than needed).
+-    // - Page not writable as requested by the game - don't do anything (need
+-    //   real access violations here).
+-    // If enabling data providers:
+-    // - Page accessible (either read/write or read-only) and didn't need data
+-    //   providers initially - protect and enable data providers.
+-    // - Otherwise - do nothing.
+-    //
+-    // It's safe not to await data provider completion here before protecting as
+-    // this never makes protection lighter, so it can't interfere with page
+-    // faults that await data providers.
+-    //
+-    // Enabling data providers doesn't need to be deferred - providers will be
+-    // polled for the last time without releasing the lock.
+     SystemPageFlagsBlock& page_flags_block = system_page_flags_[i >> 6];
+     uint64_t page_flags_bit = uint64_t(1) << (i & 63);
+     uint32_t guest_page_number =
+@@ -2131,25 +2164,20 @@
+       REXSYS_ERROR("Access callback page OOB: system_page={} guest_page={} offset=0x{:X}", i,
+                    guest_page_number, host_address_offset());
+       assert_always();
++      if (protect_system_page_first != UINT32_MAX) {
++        apply_protect_run(protect_system_page_first, i);
++        protect_system_page_first = UINT32_MAX;
++      }
+       continue;
+     }
+     rex::memory::PageAccess current_page_access =
+         ToPageAccess(page_table_[guest_page_number].current_protect);
+     bool protect_system_page = false;
+-    // Don't do anything with inaccessible pages - don't protect, don't enable
+-    // callbacks - because real access violations are needed there. And don't
+-    // enable invalidation notifications for read-only pages for the same
+-    // reason.
+     if (current_page_access != rex::memory::PageAccess::kNoAccess) {
+-      // TODO(Triang3l): Enable data providers.
+       if (enable_invalidation_notifications) {
+         if (current_page_access != rex::memory::PageAccess::kReadOnly &&
+             (page_flags_block.notify_on_invalidation & page_flags_bit) == 0) {
+-          // TODO(Triang3l): Check if data providers are already enabled.
+-          // If data providers are already enabled for the page, it has even
+-          // stricter protection.
+           protect_system_page = true;
+-          page_flags_block.notify_on_invalidation |= page_flags_bit;
+         }
+       }
+     }
+@@ -2159,16 +2187,13 @@
+       }
+     } else {
+       if (protect_system_page_first != UINT32_MAX) {
+-        rex::memory::Protect(protect_base + protect_system_page_first * system_page_size_,
+-                             (i - protect_system_page_first) * system_page_size_, protect_access);
++        apply_protect_run(protect_system_page_first, i);
+         protect_system_page_first = UINT32_MAX;
+       }
+     }
+   }
+   if (protect_system_page_first != UINT32_MAX) {
+-    rex::memory::Protect(protect_base + protect_system_page_first * system_page_size_,
+-                         (system_page_last + 1 - protect_system_page_first) * system_page_size_,
+-                         protect_access);
++    apply_protect_run(protect_system_page_first, system_page_last + 1);
+   }
+ }
+ 
+@@ -2337,6 +2362,32 @@
+   return lock;
+ }
+ 
++void PhysicalHeap::ClearWatchFlags(uint32_t heap_relative_address, uint32_t length) {
++  if (!length || heap_relative_address >= heap_size_ || system_page_count_ == 0) {
++    return;
++  }
++  length = std::min(length, heap_size_ - heap_relative_address);
++  uint32_t system_page_first = (heap_relative_address + host_address_offset()) / system_page_size_;
++  uint32_t system_page_last =
++      (heap_relative_address + length - 1 + host_address_offset()) / system_page_size_;
++  system_page_last = std::min(system_page_last, system_page_count_ - 1);
++  if (system_page_first > system_page_last) {
++    return;
++  }
++  uint32_t block_index_first = system_page_first >> 6;
++  uint32_t block_index_last = system_page_last >> 6;
++  for (uint32_t i = block_index_first; i <= block_index_last; ++i) {
++    uint64_t mask = 0;
++    if (i == block_index_first) {
++      mask |= (uint64_t(1) << (system_page_first & 63)) - 1;
++    }
++    if (i == block_index_last && (system_page_last & 63) != 63) {
++      mask |= ~((uint64_t(1) << ((system_page_last & 63) + 1)) - 1);
++    }
++    system_page_flags_[i].notify_on_invalidation &= mask;
++  }
++}
++
+ bool PhysicalHeap::IsHostPageWriteWatched(uint32_t host_page_number) const {
+   // Indices match EnableAccessCallbacks: both count host pages from
+   // membase_ + heap_base_, including host_address_offset().

@@ -1,17 +1,22 @@
 --- a/src/ui/d3d12/d3d12_presenter.cpp
 +++ b/src/ui/d3d12/d3d12_presenter.cpp
-@@ -1,3 +1,47 @@
+@@ -1,3 +1,60 @@
 +#include "camera_control.h"
 +#include "video_control.h"
 +extern "C" __declspec(dllexport) int Dwg2ExtendedFov() { return dwg2::camera::percent.load()!=0?1:0; }
 +extern "C" __declspec(dllexport) int Dwg2FovPercent() { return dwg2::camera::percent.load(); }
++#include <rex/logging.h>
 +#include "prompt_control.h"
 +#include "input_config.h"
-+extern "C" __declspec(dllexport) int Dwg2NotifyInputActivity(int family,int controller) {
-+ if((family!=1&&family!=2&&family!=3)||(controller!=0&&controller!=1)||(family==3&&controller))return 0;
-+ dwg2::prompts::last_device.store(family);if(controller)dwg2::prompts::last_controller.store(family);return 1;
++extern "C" __declspec(dllexport) int Dwg2NotifyInputActivity(int style,int controller) {
++ if(!dwg2::prompts::ValidStyle(style)||(controller!=0&&controller!=1)||(style==dwg2::prompts::kKeyboard&&controller))return 0;
++ const int prev=dwg2::prompts::Effective();
++ dwg2::prompts::NotifyActivity(style,controller!=0);
++ const int next=dwg2::prompts::Effective();
++ if(next!=prev)REXLOG_INFO("DWG2 prompt style -> {} (choice={}, device={})",dwg2::prompts::StyleName(next),dwg2::prompts::choice.load(),style);
++ return 1;
 +}
-+extern "C" __declspec(dllexport) int Dwg2ControllerStyle() { return dwg2::prompts::Effective()==3?3:dwg2::prompts::last_controller.load(); }
++extern "C" __declspec(dllexport) int Dwg2ControllerStyle() { return dwg2::prompts::Effective(); }
 +extern "C" __declspec(dllexport) unsigned Dwg2InputGeneration(){return dwg2::input::generation.load();}
 +extern "C" int Dwg2GraphicsValue(int key);
 +extern "C" __declspec(dllexport) int Dwg2KeyboardSnapshot(unsigned* keys,int count,unsigned* version){
@@ -22,6 +27,14 @@
 + if(alt){const auto a=p.alternate[i];const unsigned value=a.kind==1?unsigned(a.code)|(unsigned(a.mods)<<8):0;keys[i+n]=value==keys[i]?0:value;}}
 + *version=dwg2::input::generation.load();return 1;
 +}
++extern "C" __declspec(dllexport) int Dwg2GamepadSnapshot(int profile_type,int* kind_out,int* code_out,int* sign_out,int count,unsigned* version){
++ if((profile_type!=1&&profile_type!=2)||!kind_out||!code_out||!sign_out||(count!=25&&count!=dwg2::input::Count)||!version)return 0;
++ std::lock_guard lock(dwg2::input::mutex);
++ const auto& p=dwg2::input::profiles[profile_type];
++ const int n=std::min(count,25);
++ for(int i=0;i<n;++i){const auto& b=(p.bind[i].kind!=0)?p.bind[i]:p.alternate[i];kind_out[i]=b.kind;code_out[i]=b.code;sign_out[i]=b.sign;}
++ *version=dwg2::input::generation.load();return 1;
++}
 +extern "C" __declspec(dllexport) unsigned Dwg2KeyboardBinding(int action){
 + if(action<0||action>=dwg2::input::Count)return 0;const auto p=dwg2::input::Get(0);const auto binding=p.bind[action].kind==1?p.bind[action]:p.alternate[action];
 + return binding.kind==1?unsigned(binding.code)|(unsigned(binding.mods)<<8):0;
@@ -29,7 +42,7 @@
 +extern "C" __declspec(dllexport) int Dwg2PromptStyle() { return dwg2::prompts::Effective(); }
 +extern "C" __declspec(dllexport) int Dwg2HudCorrection() { return dwg2::prompts::hud_correction.load()?1:0; }
 +extern "C" __declspec(dllexport) int Dwg2SetPresentationPreferences(int choice,int hud) {
-+  if(choice<0||choice>2||hud<0||hud>1)return 0;
++  if(!dwg2::prompts::ValidChoice(choice)||hud<0||hud>1)return 0;
 +  dwg2::prompts::choice.store(choice);dwg2::prompts::hud_correction.store(hud!=0);return 1;
 +}
 +#include "resolution_control.h"
@@ -48,7 +61,7 @@
  /**
   ******************************************************************************
   * Xenia : Xbox 360 Emulator Research Project                                 *
-@@ -10,9 +54,14 @@
+@@ -10,9 +67,14 @@
   */
  
  #include <algorithm>
@@ -63,7 +76,7 @@
  #include <utility>
  
  #include <rex/assert.h>
-@@ -33,6 +82,8 @@
+@@ -33,6 +95,8 @@
  REXCVAR_DEFINE_BOOL(d3d12_allow_variable_refresh_rate_and_tearing, true, "UI/D3D12",
                      "Allow variable refresh rate and tearing");
  
@@ -72,7 +85,7 @@
  namespace rex::ui::d3d12 {
  
  // Generated with `xb buildshaders`.
-@@ -49,6 +100,8 @@
+@@ -49,6 +113,8 @@
  #include "ui/shaders/bytecode/d3d12_5_1/guest_output_ffx_fsr_rcas_ps.h"
  #endif
  #include "ui/shaders/bytecode/d3d12_5_1/guest_output_triangle_strip_rect_vs.h"
@@ -81,7 +94,7 @@
  }  // namespace shaders
  
  D3D12Presenter::~D3D12Presenter() {
-@@ -58,6 +111,8 @@
+@@ -58,6 +124,8 @@
    paint_context_.AwaitSwapChainUsageCompletion();
    guest_output_resource_refresher_submission_tracker_.Shutdown();
    ui_submission_tracker_.Shutdown();
@@ -90,7 +103,7 @@
  #if defined(REX_HAS_FIDELITYFX_RUNTIME) && REX_HAS_FIDELITYFX_RUNTIME
    DestroyTemporalUpscalerContext();
  #endif
-@@ -555,6 +610,47 @@
+@@ -555,6 +623,47 @@
  }
  
  Presenter::PaintResult D3D12Presenter::PaintAndPresentImpl(bool execute_ui_drawers) {
@@ -138,7 +151,7 @@
    // Begin the command list with the command allocator not currently potentially
    // used on the GPU.
    UINT64 current_paint_submission = paint_context_.paint_submission_tracker.GetCurrentSubmission();
-@@ -1129,6 +1225,52 @@
+@@ -1129,6 +1238,52 @@
      ExecuteUIDrawersFromUIThread(ui_draw_context);
    }
  
@@ -191,7 +204,7 @@
    // End drawing to the back buffer.
    D3D12_RESOURCE_BARRIER barrier_rtv_to_present;
    barrier_rtv_to_present.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-@@ -1155,9 +1297,39 @@
+@@ -1155,9 +1310,39 @@
    // fullscreen is ever used in, the allow tearing flag must not be passed in
    // fullscreen, but DXGI fullscreen is largely unneeded with the flip
    // presentation model used in Direct3D 12).

@@ -81,7 +81,28 @@
  
    // Update viewport, scissor, blend factor and stencil reference.
    UpdateFixedFunctionState(viewport_info, scissor, primitive_polygonal, normalized_depth_control);
-@@ -2880,8 +2891,10 @@
+@@ -2484,9 +2495,6 @@
+       vfetch_bits_remaining &= ~(uint32_t(1) << j);
+       uint32_t vfetch_index = i * 32 + j;
+       uint64_t vfetch_bit = uint64_t(1) << (vfetch_index & 63);
+-      if (vertex_buffers_in_sync_[vfetch_index >> 6] & vfetch_bit) {
+-        continue;
+-      }
+       xenos::xe_gpu_vertex_fetch_t vfetch_constant = regs.GetVertexFetch(vfetch_index);
+       switch (vfetch_constant.type) {
+         case xenos::FetchConstantType::kVertex:
+@@ -2507,10 +2515,6 @@
+           return false;
+       }
+       VertexBufferState& state = vertex_buffer_states_[vfetch_index];
+-      if (state.address == vfetch_constant.address && state.size == vfetch_constant.size) {
+-        vertex_buffers_in_sync_[vfetch_index >> 6] |= vfetch_bit;
+-        continue;
+-      }
+       if (!shared_memory_->RequestRange(vfetch_constant.address << 2, vfetch_constant.size << 2)) {
+         REXGPU_ERROR(
+             "Failed to request vertex buffer at 0x{:08X} (size {}) in the "
+@@ -2880,8 +2884,10 @@
    ReadbackResolveMode readback_mode = GetReadbackResolveMode(REXCVAR_GET(d3d12_readback_resolve));
    if (readback_mode == ReadbackResolveMode::kDisabled) {
      uint32_t written_address, written_length;
@@ -93,7 +114,7 @@
    }
    return IssueCopy_ReadbackResolvePath();
  }
-@@ -2893,15 +2906,22 @@
+@@ -2893,15 +2899,22 @@
      return false;
    }
  
@@ -121,7 +142,7 @@
    uint64_t resolve_key = MakeReadbackResolveKey(written_address, written_length);
    ReadbackBuffer& rb = readback_buffers_[resolve_key];
    rb.last_used_frame = frame_current_;
-@@ -2919,7 +2939,7 @@
+@@ -2919,7 +2932,7 @@
              &ui::d3d12::util::kHeapPropertiesReadback, provider.GetHeapFlagCreateNotZeroed(),
              &buffer_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&buffer)))) {
        REXGPU_ERROR("Failed to create a {} MB readback buffer", size >> 20);
@@ -130,7 +151,7 @@
      }
      if (rb.buffers[write_index]) {
        if (rb.mapped_data[write_index]) {
-@@ -2938,36 +2958,35 @@
+@@ -2938,36 +2951,35 @@
    }
  
    if (!rb.buffers[write_index]) {
@@ -176,7 +197,7 @@
      }
  
      uint32_t downscale_buffer_size = AlignReadbackBufferSize(written_length);
-@@ -2984,7 +3003,7 @@
+@@ -2984,7 +2996,7 @@
                IID_PPV_ARGS(&buffer)))) {
          REXGPU_ERROR("Failed to create a {} MB resolve downscale buffer",
                       downscale_buffer_size >> 20);
@@ -185,7 +206,7 @@
        }
        if (resolve_downscale_buffer_) {
          resources_for_deletion_.emplace_back(GetCurrentSubmission(),
-@@ -2995,23 +3014,23 @@
+@@ -2995,23 +3007,23 @@
      }
  
      if (!resolve_downscale_buffer_) {
@@ -213,7 +234,7 @@
      }
  
      const ui::d3d12::D3D12Provider& provider = GetD3D12Provider();
-@@ -3069,14 +3088,14 @@
+@@ -3069,14 +3081,14 @@
                                                 written_address, written_length);
    }
  
@@ -230,7 +251,7 @@
    }
  
    bool is_cache_miss = false;
-@@ -3085,16 +3104,18 @@
+@@ -3085,16 +3097,18 @@
      is_cache_miss = true;
      read_index = write_index;
      if (!AwaitAllQueueOperationsCompletion()) {
@@ -253,7 +274,18 @@
      }
    }
  
-@@ -3652,6 +3673,8 @@
+@@ -3192,6 +3206,10 @@
+   primitive_processor_->CompletedSubmissionUpdated();
+ 
+   texture_cache_->CompletedSubmissionUpdated(submission_completed_);
++  if (bindless_resources_used_) {
++    cbuffer_binding_descriptor_indices_vertex_.up_to_date = false;
++    cbuffer_binding_descriptor_indices_pixel_.up_to_date = false;
++  }
+ }
+ 
+ void D3D12CommandProcessor::LogDeviceRemovalDiagnostics(ID3D12Device* device, HRESULT reason) {
+@@ -3652,6 +3670,8 @@
  
    // Flags.
    uint32_t flags = 0;
@@ -262,7 +294,7 @@
    // Whether shared memory is an SRV or a UAV. Because a resource can't be in a
    // read-write (UAV) and a read-only (SRV, IBV) state at once, if any shader in
    // the pipeline uses memexport, the shared memory buffer must be a UAV.
-@@ -3802,10 +3825,10 @@
+@@ -3802,10 +3822,10 @@
      // to radius conversion to avoid multiplying the per-vertex diameter by an
      // additional constant in the shader.
      float point_screen_diameter_to_ndc_radius_x =

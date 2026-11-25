@@ -20,14 +20,8 @@ def main():
   if not target.resolve().is_relative_to(out):raise ValueError('Patch path escapes SDK copy')
   target.parent.mkdir(parents=True,exist_ok=True)
   target.write_text(m.apply_patch(target.read_text() if target.exists() else '',text))
- # Headers that patched SDK sources include directly. Optional renderer
- # experiment headers are skipped when a checkout does not carry them.
- for name in ['video_control.h','fps_overlay.h','player_settings.h','player_control_settings.h','fov_visibility.h','fov_effects.h','automatic_save.h','camera_refresh.h','fractional_msaa_bytecode.h','fractional_depth_msaa_bytecode.h','runtime_pause.h','guest_pause.h','input_config.h','input_host.h','input_ui.h','window_controls.h','dwg2_metrics.h','resolution_control.h','resolved_ranges.h','d3d12_live_resolution.inc','xma_synchronization.h','trace.h','prompt_control.h','keyboard_art.h','ui_atlas.h','input_art.h','input_art_decode.h','ui_atlas_fingerprints.h','d3d12_ui_atlas.inc','render_scale.h','scene_scale.h','d3d12_fractional_texture.inc','d3d12_fractional_resolve.inc','fractional_texture_load_bytecode.h','window_title.h','build_version.h','display_preferences.h','fullscreen_edge.h','update_input_gate.h','d3d12_fractional_texture.inc','d3d12_fractional_resolve.inc','fractional_texture_load_bytecode.h','camera_control.h','fov_ui.h','startup_load.h','game_ui_assets.h','recomp_menu_state.h','recomp_menu_layout.h','recomp_menu_renderer.h']:
-  source=repo/'src'/name
-  if not source.is_file():
-   print('skipped optional header:',name)
-   continue
-  shutil.copyfile(source,out/'include'/name)
+ for name in ['video_control.h','fps_overlay.h','player_settings.h','player_control_settings.h','fov_visibility.h','fov_effects.h','automatic_save.h','camera_refresh.h','fractional_msaa_bytecode.h','fractional_depth_msaa_bytecode.h','runtime_pause.h','guest_pause.h','input_config.h','input_host.h','input_ui.h','window_controls.h','window_title.h','build_version.h','display_preferences.h','fullscreen_edge.h','update_input_gate.h','dwg2_metrics.h','resolution_control.h','resolved_ranges.h','d3d12_live_resolution.inc','xma_synchronization.h','trace.h','prompt_control.h','prompt_packs.h','prompt_packs_data.h','keyboard_art.h','ui_atlas.h','input_art.h','input_art_decode.h','ui_atlas_fingerprints.h','d3d12_ui_atlas.inc','render_scale.h','scene_scale.h','d3d12_fractional_texture.inc','d3d12_fractional_resolve.inc','fractional_texture_load_bytecode.h','camera_control.h','fov_ui.h','startup_load.h','game_ui_assets.h','recomp_menu_state.h','recomp_menu_layout.h','recomp_menu_renderer.h']:
+  shutil.copyfile(repo/'src'/name,out/'include'/name)
  shutil.copytree(repo/'src',out/'dwg2-host/src')
  print('Patched private SDK:',out)
 

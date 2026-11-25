@@ -1,0 +1,20 @@
+--- a/src/system/xfile.cpp
++++ b/src/system/xfile.cpp
+@@ -165,9 +165,14 @@
+               size_t(byte_offset), &bytes_read);
+           if (XSUCCEEDED(result)) {
+             if (buffer_physical_heap) {
+-              buffer_physical_heap->TriggerCallbacks(
+-                  rex::thread::global_critical_region::AcquireDirect(), buffer_guest_address,
+-                  buffer_length, true, true);
++              if (!buffer_physical_heap->TriggerCallbacks(
++                      rex::thread::global_critical_region::AcquireDirect(), buffer_guest_address,
++                      buffer_length, true, true) &&
++                  bytes_read > 0) {
++                memory()->InvalidatePhysicalMemoryRange(
++                    buffer_physical_heap->GetPhysicalAddress(buffer_guest_address),
++                    static_cast<uint32_t>(bytes_read));
++              }
+             }
+ 
+             if (byte_offset) {
