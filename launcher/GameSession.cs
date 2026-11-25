@@ -7,7 +7,7 @@ using System.Threading;
 // state. The event is private to this launcher session and never touches saves.
 internal static class GameSession {
     internal const string RestartVariable="DWG2_RESTART_EVENT";
-    internal static void Run(ProcessStartInfo info,TextWriter log) {
+    internal static void Run(ProcessStartInfo info,TextWriter log,Func<string> getArguments=null) {
         string name="Local\\DWG2-Restart-"+Guid.NewGuid().ToString("N");
         using(var updates=new UpdateService(Launcher.Root))
         using(var restart=new EventWaitHandle(false,EventResetMode.ManualReset,name)) {
@@ -19,6 +19,7 @@ internal static class GameSession {
             updates.Start();
             do {
                 restart.Reset();
+                if(getArguments!=null)info.Arguments=getArguments();
                 using(var p=new Process()) {
                     object gate=new object();p.StartInfo=info;
                     DataReceivedEventHandler record=delegate(object sender,DataReceivedEventArgs e) {

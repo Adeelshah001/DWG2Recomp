@@ -108,20 +108,33 @@ class RecompMenuRenderer {
     auto fill = [&](Box box, uint32_t color) {
       quad(dwg2::ui_assets::kTexWhite, box, 0, 0, 1, 1, color);
     };
-    const auto& font = pack_.textures[dwg2::ui_assets::kTexFont];
-    auto glyph = [&](unsigned char ch) -> const dwg2::ui_assets::GlyphMetric& {
-      const auto& ascii = pack_.ascii_glyphs;
-      return ch < ascii.size() && ascii[ch].valid ? ascii[ch] : ascii['?'];
+    auto tri = [&](float x0, float y0, float x1, float y1, float x2, float y2, uint32_t color) {
+      if (vert_count + 3 > kMaxVerts) return;
+      if (batches_.empty() || batches_.back().tex != dwg2::ui_assets::kTexWhite) {
+        batches_.push_back({dwg2::ui_assets::kTexWhite, UINT(vert_count), 0});
+      }
+      dst[vert_count++] = {viewport.ox + x0 * viewport.scale, viewport.oy + y0 * viewport.scale,
+                           0.0f, 0.0f, color};
+      dst[vert_count++] = {viewport.ox + x1 * viewport.scale, viewport.oy + y1 * viewport.scale,
+                           0.0f, 0.0f, color};
+      dst[vert_count++] = {viewport.ox + x2 * viewport.scale, viewport.oy + y2 * viewport.scale,
+                           0.0f, 0.0f, color};
+      batches_.back().count += 3;
     };
+    const auto& font = pack_.textures[dwg2::ui_assets::kTexFont];
     auto text = [&](Box box, std::string_view value, float preferred, uint32_t color, Align align) {
       if (value.empty()) return;
       float advance = 0;
-      for (unsigned char ch : value) advance += glyph(ch).advance;
+      for (size_t i = 0; i < value.size();) {
+        const uint32_t cp = dwg2::ui_assets::NextUtf8Codepoint(value, i);
+        advance += pack_.GlyphForCodepoint(cp).advance;
+      }
       const auto place = PlaceText(box, advance, preferred, align);
       float x = place.x;
-      for (unsigned char ch : value) {
-        const auto& g = glyph(ch);
-        if (ch != ' ' && g.valid) {
+      for (size_t i = 0; i < value.size();) {
+        const uint32_t cp = dwg2::ui_assets::NextUtf8Codepoint(value, i);
+        const auto& g = pack_.GlyphForCodepoint(cp);
+        if (cp != ' ' && g.valid) {
           const float glyph_width = float(g.max_x - g.min_x + 1) * place.scale;
           quad(dwg2::ui_assets::kTexFont,
                {x, place.y, x + glyph_width, place.y + 28 * place.scale},
@@ -133,10 +146,11 @@ class RecompMenuRenderer {
       }
     };
 
-    DrawMenuLayout(snap, viewport.virt_w, fps_status, fill, text, [&](Box box, int id, int sub) {
-      hits_.push_back({box.x0, box.y0, box.x1, box.y1, id, sub});
-    });
-    UpdateHitRects(hits_, snap.view, snap.wiz_scroll);
+    DrawMenuLayout(snap, viewport.virt_w, fps_status, fill, tri, text,
+                   [&](Box box, int id, int sub) {
+                     hits_.push_back({box.x0, box.y0, box.x1, box.y1, id, sub});
+                   });
+    UpdateHitRects(hits_, snap.view, snap.main_scroll, snap.wiz_scroll);
     Flush(command_list, rtv_handle, width, height, slot, vert_count, batches_);
   }
 

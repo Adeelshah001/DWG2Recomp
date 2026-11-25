@@ -32,6 +32,7 @@ extern "C" void sub_82166B38(PPCContext&, uint8_t*);
 #endif
 #include <rex/rex_app.h>
 #include <rex/system/function_dispatcher.h>
+#include <rex/system/flags.h>
 #include <rex/cvar.h>
 #include <rex/logging.h>
 #include "camera_refresh.h"
@@ -129,17 +130,9 @@ extern "C" void sub_821244B8(PPCContext& ctx,uint8_t* base) {
 #define REX_STORE_U8(x,y) (*(volatile uint8_t*)(base+uint32_t(x)+DWG2_PHYS_OFFSET(x))=uint8_t(y))
 #endif
 extern "C" void sub_8216AB80(PPCContext&,uint8_t*);
-#include "native_menu_expanded.inc"
-#include "native_settings_ui.inc"
-#include "native_settings_widgets.inc"
 #include "pc_storage_text.inc"
 #include "startup_notice.inc"
 #include "title_quit.inc"
-#include "native_main_graphics.inc"
-
-
-
-#include "native_menu_trace.inc"
 #include "startup_load.h"
 #include "startup_notice_policy.h"
 #include "automatic_save.h"
@@ -224,6 +217,26 @@ static void Dwg2BootUpdate(PPCContext& ctx, uint8_t* base) {
     REXLOG_INFO("DWG2 startup: opening movie bypassed through original completion transition");
   }
 }
+extern "C" void __imp__sub_82118C80(PPCContext&, uint8_t*);
+static uint32_t Dwg2MapUserLanguageToGameIndex(uint32_t user_lang) {
+  switch (user_lang) {
+    case 4: return 2;
+    case 3: return 3;
+    case 6: return 4;
+    case 5: return 5;
+    default: return 1;
+  }
+}
+extern "C" void sub_82118C80(PPCContext& ctx, uint8_t* base) {
+  const uint32_t user_lang = REXCVAR_GET(user_language);
+  const uint32_t game_lang = Dwg2MapUserLanguageToGameIndex(user_lang);
+  REX_STORE_U32(0x826C3B14u, game_lang);
+  static std::atomic<bool> logged{false};
+  if (!logged.exchange(true, std::memory_order_relaxed)) {
+    REXLOG_INFO("DWG2 language: user_language={} -> game_lang={}", user_lang, game_lang);
+  }
+  __imp__sub_82118C80(ctx, base);
+}
 namespace dwg2::hooks {
 void RegisterTimingFpsHooks(rex::runtime::FunctionDispatcher*);
 }
@@ -236,7 +249,6 @@ class Dwg2App : public rex::ReXApp {
   }
  protected:
   void OnPostLaunchModule(rex::system::XThread*) override {
-    dwg2_menu_memory=runtime()->memory();
     dwg2_title_graphics=static_cast<rex::graphics::GraphicsSystem*>(runtime()->graphics_system());
     dwg2_title_window.store(window()?static_cast<HWND>(window()->GetNativeWindowHandle()):nullptr);
     auto* dispatcher = runtime()->function_dispatcher();
@@ -253,12 +265,6 @@ class Dwg2App : public rex::ReXApp {
       throw std::runtime_error("DWG2 effects frustum hook does not match this build");
     if(dispatcher->GetFunction(0x82225750)!=&sub_82225750||dispatcher->GetFunction(0x8222ADB8)!=&sub_8222ADB8||dispatcher->GetFunction(0x82223710)!=&sub_82223710)
       throw std::runtime_error("DWG2 FOV visibility diagnostics do not match this build");
-    if(dispatcher->GetFunction(0x821B4760)!=&sub_821B4760||dispatcher->GetFunction(0x821B4828)!=&sub_821B4828||dispatcher->GetFunction(0x821B4E80)!=&sub_821B4E80||dispatcher->GetFunction(0x8227E7B0)!=&sub_8227E7B0||dispatcher->GetFunction(0x8227E410)!=&sub_8227E410)
-      throw std::runtime_error("DWG2 native-menu diagnostic hooks do not match this build");
-    if(dispatcher->GetFunction(0x821B4880)!=&sub_821B4880||dispatcher->GetFunction(0x8227DB78)!=&sub_8227DB78||dispatcher->GetFunction(0x821B4380)!=&sub_821B4380||dispatcher->GetFunction(0x82130238)!=&sub_82130238)
-      throw std::runtime_error("DWG2 native Graphics/Video hooks do not match this candidate");
-    if(dispatcher->GetFunction(0x82167A80)!=&sub_82167A80||dispatcher->GetFunction(0x82168370)!=&sub_82168370||dispatcher->GetFunction(0x82167728)!=&sub_82167728||dispatcher->GetFunction(0x821B4BC8)!=&sub_821B4BC8||dispatcher->GetFunction(0x82130188)!=&sub_82130188)
-      throw std::runtime_error("DWG2 main Options/settings widget hooks do not match this candidate");
     if(dispatcher->GetFunction(0x8216AB80)!=&sub_8216AB80)throw std::runtime_error("DWG2 Controls nine-way navigation repair is not active");
     if(dispatcher->GetFunction(0x82115E08)!=&sub_82115E08)
       throw std::runtime_error("DWG2 startup load hook does not match this game build");
@@ -267,6 +273,8 @@ class Dwg2App : public rex::ReXApp {
         dispatcher->GetFunction(0x82166B38) != &sub_82166B38 ||
         !dispatcher->SetFunction(0x82166B38, &Dwg2BootUpdate))
       throw std::runtime_error("DWG2 startup hook does not match this game build");
+    if (dispatcher->GetFunction(0x82118C80) != &sub_82118C80)
+      throw std::runtime_error("DWG2 language boot hook does not match this game build");
     dwg2::hooks::RegisterTimingFpsHooks(dispatcher);
   }
 };

@@ -184,6 +184,7 @@
 +    menu_act.turbo = [] { return Dwg2GraphicsValue(7) != 0; };
 +    menu_act.prompt_choice = [] { return dwg2::prompts::choice.load(); };
 +    menu_act.prompt_style = [] { return dwg2::prompts::Effective(); };
++    menu_act.language = [] { return Dwg2GraphicsValue(8); };
 +    menu_act.version_text = [] { return kMenuVersion; };
 +    const auto menu_snap = dwg2::recomp_menu::Snapshot(menu_act, GetTickCount64());
 +    dwg2::recomp_menu::DrawRecompMenuOverlay(

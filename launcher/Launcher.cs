@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 
 internal static class Launcher {
-    internal const string Version = "0.8.4-alpha";
+    internal const string Version = "0.8.5-alpha";
     internal const string XexHash = "0be3f2e797a31df5d2a231635e4dc5520da36d4b9dbc7b995cf1bd3b0fedb86b";
     internal static readonly string Root = AppDomain.CurrentDomain.BaseDirectory;
     internal static string ResolvedVersion {
@@ -95,6 +95,7 @@ internal static class Launcher {
             + " --cache_root=" + Quote(Path.Combine(Root,"cache"))
             + " --log_file=" + Quote(Path.Combine(Root,"logs","dwg2-"+id+".log"))
             + " --log_level=" + logLevel + " --gpu_plugin=xenos --input_backend=sdl --mnk_mode=true"
+            + " --user_language=" + PlayerSettings.Language(PlayerSettings.Load(Root))
             + " --fullscreen="+(PlayerSettings.Integer(Root,"video","fullscreen",0,0,1)!=0?"true":"false")+" --dwg2_host_vsync=false --dwg2_skip_startup_logos=true"
             + " --resolution_scale=" + n + " --draw_resolution_scale_x=" + n + " --draw_resolution_scale_y=" + n
             + " --window_width=" + width + " --window_height=" + height;
@@ -208,12 +209,12 @@ internal static class Launcher {
                 } else { Validate(Game);EnsureExecutable(delegate(string text){}); }
                 DesktopShortcut.TryEnsure(Root);
                 if(noLaunch) return 0;
-                var info=new ProcessStartInfo(Path.Combine(Root,"bin","dwg2.exe"),Arguments()) {
+                var info=new ProcessStartInfo(Path.Combine(Root,"bin","dwg2.exe"),"") {
                     UseShellExecute=false,WorkingDirectory=Path.Combine(Root,"bin"),CreateNoWindow=true,
                     RedirectStandardOutput=true,RedirectStandardError=true
                 };
                 using(var log=new StreamWriter(Path.Combine(Root,"logs","last-console.log"),false,Encoding.UTF8))
-                    GameSession.Run(info,log);
+                    GameSession.Run(info,log,Arguments);
             }
             return 0;
         } catch(OperationCanceledException) { return 0; }

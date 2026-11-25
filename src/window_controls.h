@@ -13,6 +13,7 @@ extern "C" __declspec(dllexport) int Dwg2SeedConnectedController(int style) {
   return dwg2::prompts::Effective();
 }
 #include "input_ui.h"
+#include "recomp_menu_l10n.h"
 #include "recomp_menu_state.h"
 #include "build_version.h"
 #include "player_settings.h"
@@ -31,6 +32,7 @@ REXCVAR_DECLARE(int32_t,dwg2_present_fps);
 namespace dwg2::controls {
 inline std::atomic<HWND> graphics_window{nullptr};
 inline std::atomic<int> graphics_scale{1},graphics_fullscreen{0},graphics_pending{0};
+inline std::atomic<int> active_language{dwg2::recomp_menu::kLangEnglish};
 extern "C" __declspec(dllexport) int Dwg2GraphicsValue(int key) {
   if(key==0)return graphics_scale.load();
   if(key==1)return dwg2::camera::percent.load();
@@ -40,6 +42,7 @@ extern "C" __declspec(dllexport) int Dwg2GraphicsValue(int key) {
   if(key==5)return dwg2::video::present_fps.load();
   if(key==6)return dwg2::video::fps_counter.load()?1:0;
   if(key==7)return dwg2::video::turbo.load()?1:0;
+  if(key==8)return active_language.load();
   return -1;
 }
 constexpr UINT kScale1 = 41011, kScale3 = 41013;
@@ -194,48 +197,66 @@ inline void RequestResolutionScale(HWND hwnd,State* s,int scale) {
   dwg2::resolution::requested.store(scale);
   SetTimer(hwnd, kResolutionTimer, 50, nullptr);
 }
-inline std::string RequestRestart(HWND hwnd) {
+inline std::string RequestRestart(HWND hwnd, int lang = dwg2::recomp_menu::kLangEnglish) {
+  const auto& t = dwg2::recomp_menu::l10n::Get(lang);
   wchar_t name[128]{};
   DWORD length=GetEnvironmentVariableW(L"DWG2_RESTART_EVENT",name,128);
   HANDLE event=(length&&length<128)?OpenEventW(EVENT_MODIFY_STATE,FALSE,name):nullptr;
   if(!event) {
-    return "Start via DWG2R.exe to use Restart.";
+    return t.toast_restart_launcher;
   }
   BOOL requested=SetEvent(event);
   if(requested&&!PostMessageW(hwnd,WM_CLOSE,0,0)){ResetEvent(event);requested=FALSE;}
   CloseHandle(event);
   if(!requested) {
-    return "Restart could not be requested.";
+    return t.toast_restart_err;
   }
   return {};
 }
-inline std::string RequestCheckUpdates() {
+inline std::string ApplyLanguageAndRestart(HWND hwnd, int lang) {
+  const int cur_lang = active_language.load();
+  const auto& t = dwg2::recomp_menu::l10n::Get(cur_lang);
+  const int target = dwg2::recomp_menu::NormalizeLanguage(lang);
+  if(!dwg2::settings::Update(SettingsPath(),{{"general/language",std::to_string(target)}})) {
+    return t.toast_save_language_err;
+  }
+  const auto err = RequestRestart(hwnd,cur_lang);
+  if(!err.empty()) {
+    return err == t.toast_restart_launcher ? std::string(t.toast_lang_saved_no_launcher) : err;
+  }
+  return {};
+}
+inline std::string RequestCheckUpdates(int lang = dwg2::recomp_menu::kLangEnglish) {
+  const auto& t = dwg2::recomp_menu::l10n::Get(lang);
   wchar_t name[128]{};DWORD length=GetEnvironmentVariableW(L"DWG2_UPDATE_EVENT",name,128);
   HANDLE event=(length&&length<128)?OpenEventW(EVENT_MODIFY_STATE,FALSE,name):nullptr;
   if(!event) {
-    return "Start via DWG2R.exe to check for updates.";
+    return t.toast_update_launcher;
   }
   const BOOL ok=SetEvent(event);CloseHandle(event);
   if(!ok) {
-    return "Update request could not be sent.";
+    return t.toast_update_err;
   }
-  return "Checking for updates...";
+  return t.toast_update_checking;
 }
 inline dwg2::recomp_menu::Actions BuildMenuActions(HWND hwnd,State* s) {
+  const int lang = active_language.load();
+  const auto& t = dwg2::recomp_menu::l10n::Get(lang);
   dwg2::recomp_menu::Actions act;
-  act.restart=[hwnd]{return RequestRestart(hwnd);};
+  act.restart=[hwnd,lang]{return RequestRestart(hwnd,lang);};
   act.toggle_pause=[s]{TogglePause(s);return std::string{};};
   act.quit_game=[hwnd]{PostMessageW(hwnd,WM_CLOSE,0,0);};
-  act.set_fullscreen=[s](bool v){return ApplyFullscreen(s,v,false)?std::string{}:std::string("Could not save fullscreen setting.");};
-  act.set_resolution=[hwnd,s](int scale){if(graphics_pending.load())return std::string("Resolution change pending.");RequestResolutionScale(hwnd,s,scale);return std::string{};};
-  act.set_fov=[hwnd](int v){return ApplyFov(hwnd,v,false)?std::string{}:std::string("Could not save FOV setting.");};
-  act.set_fps=[hwnd,s](int fps){return ApplyPresentFps(hwnd,s->owner,fps,false)?std::string{}:std::string("Could not save FPS setting.");};
-  act.set_fps_counter=[hwnd,s](bool on){return ApplyFpsCounter(hwnd,s->owner,on,false)?std::string{}:std::string("Could not save FPS counter.");};
-  act.set_vsync=[hwnd](bool on){return ApplyVsync(hwnd,on,false)?std::string{}:std::string("Could not save VSync setting.");};
-  act.set_turbo=[hwnd,s](bool on){return ApplyTurbo(hwnd,s->owner,on,false)?std::string{}:std::string("Could not save Turbo Mode.");};
-  act.set_prompts=[hwnd,s](int c){return ApplyPrompts(hwnd,s->owner,c,dwg2::prompts::hud_correction.load(),false)?std::string{}:std::string("Could not save prompt style.");};
-  act.check_updates=[]{return RequestCheckUpdates();};
-  act.save_controls=[](const std::array<dwg2::input::Profile,3>& p){return dwg2::input::SavePlayerControls(p)?std::string{}:std::string("Could not save settings.ini.");};
+  act.set_fullscreen=[s,t](bool v){return ApplyFullscreen(s,v,false)?std::string{}:std::string(t.toast_save_fullscreen_err);};
+  act.set_resolution=[hwnd,s,t](int scale){if(graphics_pending.load())return std::string(t.toast_res_pending);RequestResolutionScale(hwnd,s,scale);return std::string{};};
+  act.set_fov=[hwnd,t](int v){return ApplyFov(hwnd,v,false)?std::string{}:std::string(t.toast_save_fov_err);};
+  act.set_fps=[hwnd,s,t](int fps){return ApplyPresentFps(hwnd,s->owner,fps,false)?std::string{}:std::string(t.toast_save_fps_err);};
+  act.set_fps_counter=[hwnd,s,t](bool on){return ApplyFpsCounter(hwnd,s->owner,on,false)?std::string{}:std::string(t.toast_save_fps_counter_err);};
+  act.set_vsync=[hwnd,t](bool on){return ApplyVsync(hwnd,on,false)?std::string{}:std::string(t.toast_save_vsync_err);};
+  act.set_turbo=[hwnd,s,t](bool on){return ApplyTurbo(hwnd,s->owner,on,false)?std::string{}:std::string(t.toast_save_turbo_err);};
+  act.set_prompts=[hwnd,s,t](int c){return ApplyPrompts(hwnd,s->owner,c,dwg2::prompts::hud_correction.load(),false)?std::string{}:std::string(t.toast_save_prompts_err);};
+  act.apply_language=[hwnd](int new_lang){return ApplyLanguageAndRestart(hwnd,new_lang);};
+  act.check_updates=[lang]{return RequestCheckUpdates(lang);};
+  act.save_controls=[t](const std::array<dwg2::input::Profile,3>& p){return dwg2::input::SavePlayerControls(p)?std::string{}:std::string(t.toast_save_err);};
   act.is_paused=[]{return dwg2::pause::Requested();};
   act.is_fullscreen=[s]{return s->owner->IsFullscreen();};
   act.resolution=[]{return graphics_scale.load();};
@@ -247,6 +268,7 @@ inline dwg2::recomp_menu::Actions BuildMenuActions(HWND hwnd,State* s) {
   act.turbo=[]{return dwg2::video::turbo.load();};
   act.prompt_choice=[]{return dwg2::prompts::choice.load();};
   act.prompt_style=[]{return dwg2::prompts::Effective();};
+  act.language=[]{return active_language.load();};
   act.version_text=[s]{return s->cached_version;};
   return act;
 }
@@ -479,10 +501,19 @@ inline void Install(rex::ui::WindowSDL* owner, SDL_Window* sdl) {
    dwg2::video::present_fps_initialized.store(true);}
   dwg2::prompts::choice.store(dwg2::settings::Integer(preferences,"prompts","style",0,0,dwg2::prompts::kMaxStyle));
   dwg2::prompts::hud_correction.store(dwg2::settings::Integer(preferences,"prompts","hud_correction",1,0,1)!=0);
+  {int lang=dwg2::recomp_menu::NormalizeLanguage(dwg2::settings::Integer(preferences,"general","language",1,1,6));
+   if(rex::cvar::GetFlagSource("user_language")==rex::cvar::Source::kCommandLine) {
+     const int cli_lang=int(rex::cvar::Query<uint32_t>("user_language"));
+     if(dwg2::recomp_menu::ValidLanguage(cli_lang))lang=cli_lang;
+     else rex::cvar::SetFlagByName("user_language",std::to_string(lang));
+   } else {
+     rex::cvar::SetFlagByName("user_language",std::to_string(lang));
+   }
+   active_language.store(lang);}
   Sync(owner);
   {int scale=dwg2::settings::Integer(preferences,"graphics","resolution_scale",1,1,3);if(scale<1||scale>3)scale=1;graphics_scale.store(scale);}
   if(!dwg2::input::Load())MessageBoxW(hwnd,L"settings.ini could not be read. Default mappings are active; the file is preserved until you save new mappings.",L"Controls",MB_ICONWARNING);
-  REXLOG_INFO("DWG2 settings.ini loaded: scale={} fov={} vsync={} fps={} fps_counter={} turbo={} prompts={} hud_correction={}",graphics_scale.load(),dwg2::camera::percent.load(),dwg2::video::vsync.load(),dwg2::video::present_fps.load(),dwg2::video::fps_counter.load(),dwg2::video::turbo.load(),dwg2::prompts::choice.load(),dwg2::prompts::hud_correction.load());
+  REXLOG_INFO("DWG2 settings.ini loaded: lang={} scale={} fov={} vsync={} fps={} fps_counter={} turbo={} prompts={} hud_correction={}",active_language.load(),graphics_scale.load(),dwg2::camera::percent.load(),dwg2::video::vsync.load(),dwg2::video::present_fps.load(),dwg2::video::fps_counter.load(),dwg2::video::turbo.load(),dwg2::prompts::choice.load(),dwg2::prompts::hud_correction.load());
 }
 }  // namespace dwg2::controls
 #endif

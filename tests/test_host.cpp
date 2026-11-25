@@ -365,19 +365,40 @@ int main() {
       CHECK(!fb_missing.textures[t].rgba.empty());
     }
     CHECK(fb_missing.ascii_glyphs[' '].valid && fb_missing.ascii_glyphs[' '].advance == 10);
-    CHECK(fb_missing.ascii_glyphs['0'].valid && fb_missing.ascii_glyphs['0'].cell_x == 1 * 28 &&
-          fb_missing.ascii_glyphs['0'].cell_y == 2 * 28);
-    CHECK(fb_missing.ascii_glyphs['A'].valid && fb_missing.ascii_glyphs['A'].cell_x == 11 * 28 &&
+    CHECK(fb_missing.ascii_glyphs['0'].valid && fb_missing.ascii_glyphs['0'].cell_x == 0 &&
+          fb_missing.ascii_glyphs['0'].cell_y == 1 * 28);
+    CHECK(fb_missing.ascii_glyphs['A'].valid && fb_missing.ascii_glyphs['A'].cell_x == 1 * 28 &&
           fb_missing.ascii_glyphs['A'].cell_y == 2 * 28);
-    CHECK(fb_missing.ascii_glyphs['Z'].valid && fb_missing.ascii_glyphs['Z'].cell_x == 0 &&
+    CHECK(fb_missing.ascii_glyphs['Z'].valid && fb_missing.ascii_glyphs['Z'].cell_x == 10 * 28 &&
           fb_missing.ascii_glyphs['Z'].cell_y == 3 * 28);
     CHECK(fb_missing.ascii_glyphs['a'].valid && fb_missing.ascii_glyphs['a'].cell_x == 1 * 28 &&
-          fb_missing.ascii_glyphs['a'].cell_y == 3 * 28);
-    CHECK(fb_missing.ascii_glyphs['['].valid && fb_missing.ascii_glyphs['['].cell_x == 25 * 28 &&
-          fb_missing.ascii_glyphs['['].cell_y == 0);
-    CHECK(fb_missing.ascii_glyphs['%'].valid && fb_missing.ascii_glyphs['%'].cell_x == 16 * 28 &&
-          fb_missing.ascii_glyphs['%'].cell_y == 1 * 28);
+          fb_missing.ascii_glyphs['a'].cell_y == 4 * 28);
+    CHECK(fb_missing.ascii_glyphs['['].valid && fb_missing.ascii_glyphs['['].cell_x == 11 * 28 &&
+          fb_missing.ascii_glyphs['['].cell_y == 3 * 28);
+    CHECK(fb_missing.ascii_glyphs['%'].valid && fb_missing.ascii_glyphs['%'].cell_x == 5 * 28 &&
+          fb_missing.ascii_glyphs['%'].cell_y == 0);
     CHECK(fb_missing.ascii_glyphs['A'].advance >= 6 && fb_missing.ascii_glyphs['A'].advance <= 28);
+
+    // UTF-8 decoding and Latin-1 / European accented glyph table checks.
+    {
+      const std::string_view sample = "éèäöüßñçàìœŒ¡¿";
+      size_t idx = 0;
+      const uint32_t expected_cps[] = {
+          0x00E9u, 0x00E8u, 0x00E4u, 0x00F6u, 0x00FCu, 0x00DFu, 0x00F1u,
+          0x00E7u, 0x00E0u, 0x00ECu, 0x0153u, 0x0152u, 0x00A1u, 0x00BFu};
+      for (uint32_t exp : expected_cps) {
+        const uint32_t cp = dwg2::ui_assets::NextUtf8Codepoint(sample, idx);
+        CHECK(cp == exp);
+        CHECK(fb_missing.HasGlyph(cp));
+      }
+      CHECK(idx == sample.size());
+      CHECK(fb_missing.GlyphForCodepoint(0x00E9u).cell_x == 13 * 28 &&
+            fb_missing.GlyphForCodepoint(0x00E9u).cell_y == 6 * 28);
+      CHECK(fb_missing.GlyphForCodepoint(0x0153u).cell_x == 5 * 28 &&
+            fb_missing.GlyphForCodepoint(0x0153u).cell_y == 7 * 28);
+      CHECK(fb_missing.GlyphForCodepoint(0x00BFu).cell_x == 0 &&
+            fb_missing.GlyphForCodepoint(0x00BFu).cell_y == 9 * 28);
+    }
 
     const auto corrupt = std::filesystem::temp_directory_path() / L"dwg2_corrupt_linkdata_test.bns";
     {
@@ -388,7 +409,7 @@ int main() {
     const auto fb_corrupt = dwg2::ui_assets::LoadPack(corrupt);
     std::filesystem::remove(corrupt, ec);
     CHECK(!fb_corrupt.from_game_data);
-    CHECK(fb_corrupt.textures[dwg2::ui_assets::kTexFont].width == 1024);
+    CHECK(fb_corrupt.textures[dwg2::ui_assets::kTexFont].width == 512);
   }
 
   // input_config & player_control_settings: RecompMenu defaults, legacy migration, guest LT suppression.
@@ -451,8 +472,8 @@ int main() {
         dwg2::input::Get(0), dwg2::input::Get(1), dwg2::input::Get(2)};
     bool m_paused = false, m_full = false, m_fps_cnt = false, m_vsync = false, m_turbo = false,
          m_quit = false;
-    int m_res = 1, m_fov = 0, m_fps = 60, m_prompts = 0, m_save_calls = 0, m_restarts = 0;
-    int m_update_checks = 0;
+    int m_res = 1, m_fov = 0, m_fps = 60, m_prompts = 0, m_lang = 1, m_save_calls = 0,
+        m_restarts = 0, m_lang_restarts = 0, m_update_checks = 0;
 
     dwg2::recomp_menu::Actions act{};
     act.restart = [&]() -> std::string { ++m_restarts; return "Restart unavailable."; };
@@ -467,6 +488,11 @@ int main() {
     act.set_vsync = [&](bool v) -> std::string { m_vsync = v; return {}; };
     act.set_turbo = [&](bool v) -> std::string { m_turbo = v; return {}; };
     act.set_prompts = [&](int p) -> std::string { m_prompts = p; return {}; };
+    act.apply_language = [&](int lang) -> std::string {
+      m_lang = lang;
+      ++m_lang_restarts;
+      return {};
+    };
     act.save_controls = [&](const std::array<dwg2::input::Profile, 3>&) -> std::string {
       ++m_save_calls;
       return {};
@@ -480,8 +506,9 @@ int main() {
     act.vsync = [&]() { return m_vsync; };
     act.turbo = [&]() { return m_turbo; };
     act.prompt_choice = [&]() { return m_prompts; };
+    act.language = [&]() { return m_lang; };
 
-    CHECK(dwg2::recomp_menu::kMainItemCount == 13);
+    CHECK(dwg2::recomp_menu::kMainItemCount == 14);
     dwg2::recomp_menu::SetOpen(false);
     CHECK(!dwg2::recomp_menu::IsOpen());
     dwg2::recomp_menu::Toggle(false);
@@ -549,14 +576,32 @@ int main() {
     CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kCheckUpdates);
     kb_tap(40);  // Back to Restart
 
-    // Walk all 11 vertical rows (Restart, Fullscreen..CheckUpdates) and verify wrap back to Restart.
+    // Walk all 12 main rows (Restart, Fullscreen..CheckUpdates) and verify automatic main_scroll
+    // tracking plus top<->bottom wrap.
+    CHECK(dwg2::recomp_menu::MaxMainScroll() > 0);
     CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kRestart);
+    CHECK(dwg2::recomp_menu::Snapshot(act).main_scroll == 0);
     kb_tap(40);
     for (int i = dwg2::recomp_menu::kFullscreen; i < dwg2::recomp_menu::kMainItemCount; ++i) {
-      CHECK(dwg2::recomp_menu::Snapshot(act).focus == i);
+      const auto s_walk = dwg2::recomp_menu::Snapshot(act);
+      CHECK(s_walk.focus == i);
+      const int row = dwg2::recomp_menu::FocusToMainRow(i);
+      CHECK(row >= s_walk.main_scroll && row <= dwg2::recomp_menu::LastVisibleMainRow(s_walk.main_scroll));
       kb_tap(40);  // Down
     }
     CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kRestart);
+    CHECK(dwg2::recomp_menu::Snapshot(act).main_scroll == 0);
+    kb_tap(38);  // Wrap Up Restart -> CheckUpdates
+    {
+      const auto s_bot = dwg2::recomp_menu::Snapshot(act);
+      CHECK(s_bot.focus == dwg2::recomp_menu::kCheckUpdates);
+      CHECK(s_bot.main_scroll == dwg2::recomp_menu::MaxMainScroll());
+      CHECK(dwg2::recomp_menu::LastVisibleMainRow(s_bot.main_scroll) ==
+            dwg2::recomp_menu::kMainRowCount - 1);
+    }
+    kb_tap(40);  // Wrap Down CheckUpdates -> Restart
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kRestart);
+    CHECK(dwg2::recomp_menu::Snapshot(act).main_scroll == 0);
 
     // Resolution, FOV, FPS, FPS Counter, VSync, Prompts actions.
     while (dwg2::recomp_menu::Snapshot(act).focus != dwg2::recomp_menu::kResolution) kb_tap(40);
@@ -592,6 +637,47 @@ int main() {
     }
     kb_tap(13);
     CHECK(m_prompts == 1);
+
+    // Language selector: Confirm on unchanged language stays in kMain; left/right cycle
+    // pending_language without restarting; Confirm on changed language opens Restart Required
+    // modal (default No); No/Esc cancels and reverts; Yes applies & restarts.
+    while (dwg2::recomp_menu::Snapshot(act).focus != dwg2::recomp_menu::kLanguage) kb_tap(40);
+    kb_tap(13);  // Unchanged language (1 == 1) -> stays in kMain
+    CHECK(dwg2::recomp_menu::Snapshot(act).view == dwg2::recomp_menu::View::kMain);
+    for (int expected_lang : {4, 3, 6, 5, 1}) {
+      kb_tap(39);
+      CHECK(dwg2::recomp_menu::Snapshot(act).pending_language == expected_lang);
+      CHECK(m_lang == 1 && m_lang_restarts == 0);
+    }
+    kb_tap(13);  // Wrapped back to 1 (unchanged) -> stays in kMain
+    CHECK(dwg2::recomp_menu::Snapshot(act).view == dwg2::recomp_menu::View::kMain);
+    kb_tap(37);  // Wrap left 1 -> 5
+    CHECK(dwg2::recomp_menu::Snapshot(act).pending_language == 5);
+    kb_tap(13);  // Confirm -> Restart Required modal (default No)
+    {
+      auto lsnap = dwg2::recomp_menu::Snapshot(act);
+      CHECK(lsnap.view == dwg2::recomp_menu::View::kConfirmLanguageRestart && !lsnap.confirm_quit_yes);
+    }
+    kb_tap(13);  // Confirm No -> returns to kMain, reverts pending_language
+    CHECK(m_lang_restarts == 0 && m_lang == 1);
+    CHECK(dwg2::recomp_menu::Snapshot(act).view == dwg2::recomp_menu::View::kMain);
+    CHECK(dwg2::recomp_menu::Snapshot(act).pending_language == 1);
+    kb_tap(39);  // 1 -> 4
+    kb_tap(39);  // 4 -> 3
+    CHECK(dwg2::recomp_menu::Snapshot(act).pending_language == 3);
+    kb_tap(13);  // Open modal
+    kb_tap(27);  // Esc -> cancels & reverts
+    CHECK(m_lang_restarts == 0 && dwg2::recomp_menu::Snapshot(act).pending_language == 1);
+    kb_tap(39);  // 1 -> 4
+    kb_tap(39);  // 4 -> 3
+    kb_tap(13);  // Open modal
+    kb_tap(37);  // Left -> Yes
+    CHECK(dwg2::recomp_menu::Snapshot(act).confirm_quit_yes);
+    kb_tap(13);  // Confirm Yes -> applies language 3 & triggers restart
+    CHECK(m_lang == 3 && m_lang_restarts == 1);
+    m_lang = 1;  // Reset for remaining English toast checks below.
+    dwg2::recomp_menu::SetOpen(false);
+    dwg2::recomp_menu::SetOpen(true, false);
 
     // Inline Quit Yes/No (default No): Up reaches Row 1 (Restart), Left wraps to Quit Game.
     while (dwg2::recomp_menu::Snapshot(act).focus != dwg2::recomp_menu::kRestart) kb_tap(38);
@@ -642,7 +728,7 @@ int main() {
     CHECK(m_save_calls == 0);
     CHECK(dwg2::recomp_menu::Snapshot(act).view == dwg2::recomp_menu::View::kMain);
 
-    // Re-enter wizard, adjust deadzone, restore defaults, save.
+    // Re-enter wizard naturally from kConfigureControls, adjust deadzone, restore defaults, save.
     kb_tap(13);
     while (dwg2::recomp_menu::Snapshot(act).wiz_cursor != dwg2::recomp_menu::kWizDeadzone) kb_tap(38);
     kb_tap(39);  // deadzone 0 -> 5
@@ -661,11 +747,27 @@ int main() {
     CHECK(dwg2::recomp_menu::ScreenToVirtual(800.0f, 10.0f, 1600.0f, 1200.0f, vx, vy));
     CHECK(!dwg2::recomp_menu::ScreenToVirtual(400.0f, 10.0f, 800.0f, 1000.0f, vx, vy));
 
+    // Returning via kHitWizBack when main_scroll is 0 scrolls kConfigureControls into view.
+    {
+      auto& st = dwg2::recomp_menu::detail::GetState();
+      std::lock_guard lock(st.mutex);
+      st.main_scroll = 0;
+    }
     dwg2::recomp_menu::UpdateHitRects({
         {50, 100, 90, 120, dwg2::recomp_menu::kHitWizBack, 0},
-    }, dwg2::recomp_menu::View::kControlsWizard, dwg2::recomp_menu::Snapshot(act).wiz_scroll);
+    }, dwg2::recomp_menu::View::kControlsWizard, 0, dwg2::recomp_menu::Snapshot(act).wiz_scroll);
     CHECK(dwg2::recomp_menu::HandleMouseDown(70.0f, 110.0f, act, now));
-    CHECK(dwg2::recomp_menu::Snapshot(act).view == dwg2::recomp_menu::View::kMain);
+    {
+      const auto s_back = dwg2::recomp_menu::Snapshot(act);
+      CHECK(s_back.view == dwg2::recomp_menu::View::kMain);
+      CHECK(s_back.focus == dwg2::recomp_menu::kConfigureControls);
+      const int cfg_row = dwg2::recomp_menu::FocusToMainRow(dwg2::recomp_menu::kConfigureControls);
+      CHECK(cfg_row >= s_back.main_scroll &&
+            cfg_row <= dwg2::recomp_menu::LastVisibleMainRow(s_back.main_scroll));
+    }
+    // Reset to top scroll and verify mouse hits + wheel + scroll-arrow clicks + focus clamping.
+    while (dwg2::recomp_menu::Snapshot(act).focus != dwg2::recomp_menu::kRestart) kb_tap(38);
+    CHECK(dwg2::recomp_menu::Snapshot(act).main_scroll == 0);
     dwg2::recomp_menu::UpdateHitRects({
         {100, 100, 300, 120, dwg2::recomp_menu::kHitFovSlider, 0},
         {320, 100, 360, 120, dwg2::recomp_menu::kHitResStop, 1},
@@ -675,7 +777,7 @@ int main() {
         {650, 100, 690, 120, dwg2::recomp_menu::kHitToggleOn, dwg2::recomp_menu::kTurbo},
         {700, 100, 740, 120, dwg2::recomp_menu::kHitToggleOff, dwg2::recomp_menu::kTurbo},
         {580, 100, 640, 120, dwg2::recomp_menu::kHitMainRow, dwg2::recomp_menu::kRestart},
-    }, dwg2::recomp_menu::View::kMain, 0);
+    }, dwg2::recomp_menu::View::kMain, 0, 0);
     CHECK(dwg2::recomp_menu::HandleMouseDown(200.0f, 110.0f, act, now));
     CHECK(m_fov == 50);
     dwg2::recomp_menu::HandleMouseMove(250.0f, 110.0f, act);
@@ -683,7 +785,32 @@ int main() {
     dwg2::recomp_menu::HandleMouseUp();
     CHECK(dwg2::recomp_menu::HandleMouseDown(340.0f, 110.0f, act, now));
     CHECK(m_res == 1);
-    dwg2::recomp_menu::HandleMouseWheel(-1.0f);  // in kMain -> no-op
+    // Wheel scrolling in View::kMain steps main_scroll, clamps off-screen focus into view,
+    // and invalidates stale hit rects until updated.
+    dwg2::recomp_menu::HandleMouseWheel(-1.0f);
+    {
+      const auto sw1 = dwg2::recomp_menu::Snapshot(act);
+      CHECK(sw1.main_scroll == 1);
+      CHECK(sw1.focus == dwg2::recomp_menu::kResolution);  // Row 2 stays in [1..9]
+    }
+    CHECK(!dwg2::recomp_menu::HandleMouseDown(480.0f, 110.0f, act, now));  // Stale hit_main_scroll!
+    for (int s = 0; s < dwg2::recomp_menu::MaxMainScroll() + 2; ++s) {
+      dwg2::recomp_menu::HandleMouseWheel(-1.0f);
+    }
+    CHECK(dwg2::recomp_menu::Snapshot(act).main_scroll == dwg2::recomp_menu::MaxMainScroll());
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kFov);  // Clamped 2 -> 3
+    while (dwg2::recomp_menu::Snapshot(act).focus != dwg2::recomp_menu::kCheckUpdates) kb_tap(40);
+    dwg2::recomp_menu::HandleMouseWheel(1.0f);  // Scroll up 1 -> clamps kCheckUpdates to kLanguage
+    {
+      const auto sw_up = dwg2::recomp_menu::Snapshot(act);
+      CHECK(sw_up.main_scroll == dwg2::recomp_menu::MaxMainScroll() - 1);
+      CHECK(sw_up.focus == dwg2::recomp_menu::kLanguage);
+    }
+    for (int s = 0; s < dwg2::recomp_menu::MaxMainScroll() + 2; ++s) {
+      dwg2::recomp_menu::HandleMouseWheel(1.0f);
+    }
+    CHECK(dwg2::recomp_menu::Snapshot(act).main_scroll == 0);
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kButtonPrompts);
     CHECK(dwg2::recomp_menu::HandleMouseDown(480.0f, 110.0f, act, now) && m_full);
     CHECK(dwg2::recomp_menu::HandleMouseDown(480.0f, 110.0f, act, now) && m_full);
     CHECK(dwg2::recomp_menu::HandleMouseDown(540.0f, 110.0f, act, now) && !m_full);
@@ -691,38 +818,160 @@ int main() {
     CHECK(dwg2::recomp_menu::HandleMouseDown(720.0f, 110.0f, act, now) && !m_turbo);
     CHECK(dwg2::recomp_menu::HandleMouseDown(600.0f, 110.0f, act, now));
     CHECK(!dwg2::recomp_menu::HandleMouseDown(420.0f, 110.0f, act, now)); // Stale main hit.
+    // Wheel is ignored while a confirm modal is active.
+    {
+      const int modal_scroll = dwg2::recomp_menu::Snapshot(act).main_scroll;
+      dwg2::recomp_menu::HandleMouseWheel(-1.0f);
+      CHECK(dwg2::recomp_menu::Snapshot(act).view == dwg2::recomp_menu::View::kConfirmRestart);
+      CHECK(dwg2::recomp_menu::Snapshot(act).main_scroll == modal_scroll);
+    }
 
     std::vector<dwg2::recomp_menu::HitRect> modal_hits;
     restart = dwg2::recomp_menu::Snapshot(act);
     const auto viewport = dwg2::recomp_menu::ComputeViewport(1280, 800);
     dwg2::recomp_menu::DrawMenuLayout(restart, viewport.virt_w, "",
-        [](dwg2::recomp_menu::Box, uint32_t) {}, [](auto...) {},
+        [](dwg2::recomp_menu::Box, uint32_t) {}, [](auto...) {}, [](auto...) {},
         [&](auto box, int id, int sub) {
           modal_hits.push_back({box.x0, box.y0, box.x1, box.y1, id, sub});
         });
     CHECK(modal_hits.size() == 2 && modal_hits.front().id == dwg2::recomp_menu::kHitQuitYes);
-    dwg2::recomp_menu::UpdateHitRects(modal_hits, restart.view, 0);
+    dwg2::recomp_menu::UpdateHitRects(modal_hits, restart.view, restart.main_scroll, 0);
     const auto yes = modal_hits.front();
     CHECK(dwg2::recomp_menu::ScreenToVirtual(
         viewport.ox + (yes.x0 + yes.x1) / 2 * viewport.scale,
         viewport.oy + (yes.y0 + yes.y1) / 2 * viewport.scale, 1280, 800, vx, vy));
     CHECK(dwg2::recomp_menu::HandleMouseDown(vx, vy, act, now) && m_restarts == 2);
     CHECK(dwg2::recomp_menu::Snapshot(act).view == dwg2::recomp_menu::View::kMain);
+
+    // Scroll indicator hit rects & clicks: top scroll shows only Down arrow; scrolling to bottom
+    // shows only Up arrow; clicking arrows steps main_scroll cleanly.
+    // Also verify Button Prompts center click & Language center/arrow clicks at scrolled bottom!
+    {
+      auto find_hit_in = [](const std::vector<dwg2::recomp_menu::HitRect>& hits, int id,
+                            int sub) -> dwg2::recomp_menu::HitRect {
+        for (const auto& h : hits) {
+          if (h.id == id && h.sub == sub) return h;
+        }
+        return {};
+      };
+      std::vector<dwg2::recomp_menu::HitRect> main_hits;
+      auto main_snap = dwg2::recomp_menu::Snapshot(act);
+      CHECK(main_snap.main_scroll == 0);
+      dwg2::recomp_menu::DrawMenuLayout(main_snap, viewport.virt_w, "",
+          [](dwg2::recomp_menu::Box, uint32_t) {}, [](auto...) {}, [](auto...) {},
+          [&](auto box, int id, int sub) {
+            main_hits.push_back({box.x0, box.y0, box.x1, box.y1, id, sub});
+          });
+      CHECK(find_hit_in(main_hits, dwg2::recomp_menu::kHitMainScrollUp, 0).id ==
+            dwg2::recomp_menu::kHitNone);
+      const auto down_hit = find_hit_in(main_hits, dwg2::recomp_menu::kHitMainScrollDown, 0);
+      CHECK(down_hit.id == dwg2::recomp_menu::kHitMainScrollDown);
+      dwg2::recomp_menu::UpdateHitRects(main_hits, main_snap.view, main_snap.main_scroll, 0);
+      CHECK(dwg2::recomp_menu::HandleMouseDown(
+          (down_hit.x0 + down_hit.x1) / 2, (down_hit.y0 + down_hit.y1) / 2, act, now));
+      CHECK(dwg2::recomp_menu::Snapshot(act).main_scroll == 1);
+      CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kFullscreen);
+
+      // Scroll to MaxMainScroll() via mouse wheel, redraw, check Up arrow present and Down absent.
+      for (int s = 0; s < dwg2::recomp_menu::MaxMainScroll(); ++s) {
+        dwg2::recomp_menu::HandleMouseWheel(-1.0f);
+      }
+      main_snap = dwg2::recomp_menu::Snapshot(act);
+      CHECK(main_snap.main_scroll == dwg2::recomp_menu::MaxMainScroll());
+      main_hits.clear();
+      dwg2::recomp_menu::DrawMenuLayout(main_snap, viewport.virt_w, "",
+          [](dwg2::recomp_menu::Box, uint32_t) {}, [](auto...) {}, [](auto...) {},
+          [&](auto box, int id, int sub) {
+            main_hits.push_back({box.x0, box.y0, box.x1, box.y1, id, sub});
+          });
+      CHECK(find_hit_in(main_hits, dwg2::recomp_menu::kHitMainScrollDown, 0).id ==
+            dwg2::recomp_menu::kHitNone);
+      const auto up_hit = find_hit_in(main_hits, dwg2::recomp_menu::kHitMainScrollUp, 0);
+      CHECK(up_hit.id == dwg2::recomp_menu::kHitMainScrollUp);
+      dwg2::recomp_menu::UpdateHitRects(main_hits, main_snap.view, main_snap.main_scroll, 0);
+
+      // Button Prompts center click cycles forward (no reset to Auto),
+      // Language center click is a no-op when unchanged and opens modal when changed.
+      CHECK(find_hit_in(main_hits, dwg2::recomp_menu::kHitPromptChoice, 0).id ==
+            dwg2::recomp_menu::kHitNone);
+      const auto prompt_row =
+          find_hit_in(main_hits, dwg2::recomp_menu::kHitMainRow, dwg2::recomp_menu::kButtonPrompts);
+      const auto prompt_left = find_hit_in(main_hits, dwg2::recomp_menu::kHitPromptChoice, -1);
+      const auto prompt_right = find_hit_in(main_hits, dwg2::recomp_menu::kHitPromptChoice, -2);
+      CHECK(prompt_row.id == dwg2::recomp_menu::kHitMainRow &&
+            prompt_left.id == dwg2::recomp_menu::kHitPromptChoice &&
+            prompt_right.id == dwg2::recomp_menu::kHitPromptChoice);
+      const float prompt_cx = (prompt_left.x1 + prompt_right.x0) / 2;
+      const float prompt_cy = (prompt_row.y0 + prompt_row.y1) / 2;
+      CHECK(m_prompts == 1);
+      CHECK(dwg2::recomp_menu::HandleMouseDown(prompt_cx, prompt_cy, act, now));
+      CHECK(m_prompts == 4);  // Cycled forward 1 -> 4, did not reset to 0
+
+      // Clicking Up arrow steps main_scroll back by 1 (from MaxMainScroll() to MaxMainScroll()-1).
+      CHECK(dwg2::recomp_menu::HandleMouseDown(
+          (up_hit.x0 + up_hit.x1) / 2, (up_hit.y0 + up_hit.y1) / 2, act, now));
+      CHECK(dwg2::recomp_menu::Snapshot(act).main_scroll == dwg2::recomp_menu::MaxMainScroll() - 1);
+      // Scroll back to bottom and refresh hits for Language clicks.
+      dwg2::recomp_menu::HandleMouseWheel(-1.0f);
+      main_snap = dwg2::recomp_menu::Snapshot(act);
+      main_hits.clear();
+      dwg2::recomp_menu::DrawMenuLayout(main_snap, viewport.virt_w, "",
+          [](dwg2::recomp_menu::Box, uint32_t) {}, [](auto...) {}, [](auto...) {},
+          [&](auto box, int id, int sub) {
+            main_hits.push_back({box.x0, box.y0, box.x1, box.y1, id, sub});
+          });
+      dwg2::recomp_menu::UpdateHitRects(main_hits, main_snap.view, main_snap.main_scroll, 0);
+
+      const auto lang_left = find_hit_in(main_hits, dwg2::recomp_menu::kHitLanguageChoice, -1);
+      const auto lang_center = find_hit_in(main_hits, dwg2::recomp_menu::kHitLanguageChoice, 0);
+      const auto lang_right = find_hit_in(main_hits, dwg2::recomp_menu::kHitLanguageChoice, -2);
+      CHECK(lang_left.id == dwg2::recomp_menu::kHitLanguageChoice &&
+            lang_center.id == dwg2::recomp_menu::kHitLanguageChoice &&
+            lang_right.id == dwg2::recomp_menu::kHitLanguageChoice);
+      const float lc_x = (lang_center.x0 + lang_center.x1) / 2;
+      const float lc_y = (lang_center.y0 + lang_center.y1) / 2;
+      // Unchanged language center click stays in kMain.
+      CHECK(dwg2::recomp_menu::HandleMouseDown(lc_x, lc_y, act, now));
+      CHECK(dwg2::recomp_menu::Snapshot(act).view == dwg2::recomp_menu::View::kMain);
+      // Cycle > (1->4), < (4->1), > (1->4), then center click -> opens modal.
+      CHECK(dwg2::recomp_menu::HandleMouseDown((lang_right.x0 + lang_right.x1) / 2, lc_y, act, now));
+      CHECK(dwg2::recomp_menu::Snapshot(act).pending_language == 4);
+      CHECK(dwg2::recomp_menu::HandleMouseDown((lang_left.x0 + lang_left.x1) / 2, lc_y, act, now));
+      CHECK(dwg2::recomp_menu::Snapshot(act).pending_language == 1);
+      CHECK(dwg2::recomp_menu::HandleMouseDown((lang_right.x0 + lang_right.x1) / 2, lc_y, act, now));
+      CHECK(dwg2::recomp_menu::HandleMouseDown(lc_x, lc_y, act, now));
+      CHECK(dwg2::recomp_menu::Snapshot(act).view == dwg2::recomp_menu::View::kConfirmLanguageRestart);
+    }
+    modal_hits.clear();
+    auto lang_modal = dwg2::recomp_menu::Snapshot(act);
+    dwg2::recomp_menu::DrawMenuLayout(lang_modal, viewport.virt_w, "",
+        [](dwg2::recomp_menu::Box, uint32_t) {}, [](auto...) {}, [](auto...) {},
+        [&](auto box, int id, int sub) {
+          modal_hits.push_back({box.x0, box.y0, box.x1, box.y1, id, sub});
+        });
+    CHECK(modal_hits.size() == 2 && modal_hits.front().id == dwg2::recomp_menu::kHitQuitYes);
+    dwg2::recomp_menu::UpdateHitRects(modal_hits, lang_modal.view, lang_modal.main_scroll, 0);
+    const auto lang_yes = modal_hits.front();
+    CHECK(dwg2::recomp_menu::HandleMouseDown(
+        (lang_yes.x0 + lang_yes.x1) / 2, (lang_yes.y0 + lang_yes.y1) / 2, act, now));
+    CHECK(m_lang == 4 && m_lang_restarts == 2);
+    CHECK(dwg2::recomp_menu::Snapshot(act).view == dwg2::recomp_menu::View::kMain);
+
     dwg2::recomp_menu::SetOpen(false);
     for (int i = 0; i < 3; ++i) dwg2::input::Set(i, saved_profiles[i]);
   }
 
-  // Layout and hit bounds for small, 16:10, 4:3, 4K, ultrawide and portrait windows.
+  // Layout and hit bounds for small, 16:10, 4:3, 4K, ultrawide and portrait windows across all 5
+  // languages and main scroll offsets (top, middle, bottom).
   {
     using namespace dwg2::recomp_menu;
-    const auto font = dwg2::ui_assets::detail::BuildFallbackPack().ascii_glyphs;
+    const auto pack = dwg2::ui_assets::detail::BuildFallbackPack();
     MenuSnapshot snap{};
     snap.open = true;
     snap.fov = 100;
     snap.resolution_pending = 3;
     snap.prompt_choice = 0;
     snap.prompt_style = dwg2::prompts::kXboxSeries; // Longest "Auto (Xbox Series)" label
-    snap.toast = "Could not save settings.ini. The previous settings are retained.";
     snap.version_text = std::string(64, 'W');
     snap.working_profiles[0] = dwg2::input::Defaults(0);
     CHECK(BindingLabel(snap.working_profiles[0].alternate[0], 0) == "Semicolon");
@@ -734,60 +983,104 @@ int main() {
         std::pair{1600, 1200}, std::pair{3840, 2160}, std::pair{3440, 1440},
         std::pair{3840, 1080}, std::pair{800, 1000},
     };
-    for (auto [width, height] : sizes) {
-      auto vp = ComputeViewport(float(width), float(height));
-      for (const auto view : {View::kMain, View::kControlsWizard, View::kConfirmRestart, View::kConfirmQuit}) {
-        snap.view = view;
-        std::vector<Box> text_slots;
-        std::vector<HitRect> hits;
-        bool expected_title_visible = false;
-        bool geometry_ok = true;
-        const auto require = [&](bool condition) { geometry_ok &= condition; };
-        const auto check_box = [&](Box box) {
-          require(box.x0 >= 0 && box.y0 >= 0 && box.x1 <= vp.virt_w && box.y1 <= vp.virt_h);
-          require(box.Width() > 0 && box.Height() > 0);
-        };
-        DrawMenuLayout(snap, vp.virt_w, "120 FPS / 120 SWAP", [&](Box box, uint32_t) {
-          check_box(box);
-          if (box.x0 == 0 && box.y0 == 0 && box.x1 == vp.virt_w && box.y1 == vp.virt_h) {
-            text_slots.clear(); // The confirmation scrim starts a new visual layer.
+    for (int lang : kLanguageOrder) {
+      const auto& t = l10n::Get(lang);
+      snap.language = lang;
+      snap.pending_language = lang;
+      snap.toast = t.toast_save_err;
+      for (auto [width, height] : sizes) {
+        auto vp = ComputeViewport(float(width), float(height));
+        for (const auto view : {View::kMain, View::kControlsWizard, View::kConfirmRestart,
+                                View::kConfirmQuit, View::kConfirmLanguageRestart}) {
+          snap.view = view;
+          const int max_scroll = (view == View::kMain) ? MaxMainScroll() : 0;
+          for (int sc = 0; sc <= max_scroll; ++sc) {
+            snap.main_scroll = sc;
+            const bool expect_about =
+                (view != View::kMain) ||
+                (LastVisibleMainRow(snap.main_scroll) == kMainRowCount - 1);
+            std::vector<Box> text_slots;
+            std::vector<HitRect> hits;
+            size_t tri_count = 0;
+            bool expected_title_visible = false;
+            bool expected_blurb_visible = (view != View::kMain);
+            bool expected_version_visible = (view != View::kMain);
+            bool geometry_ok = true;
+            const auto require = [&](bool condition) { geometry_ok &= condition; };
+            const auto check_box = [&](Box box) {
+              require(box.x0 >= 0 && box.y0 >= 0 && box.x1 <= vp.virt_w && box.y1 <= vp.virt_h);
+              require(box.Width() > 0 && box.Height() > 0);
+            };
+            DrawMenuLayout(snap, vp.virt_w, "120 FPS / 120 SWAP", [&](Box box, uint32_t) {
+              check_box(box);
+              if (box.x0 == 0 && box.y0 == 0 && box.x1 == vp.virt_w && box.y1 == vp.virt_h) {
+                text_slots.clear(); // The confirmation scrim starts a new visual layer.
+              }
+            }, [&](float x0, float y0, float x1, float y1, float x2, float y2, uint32_t) {
+              for (float px : {x0, x1, x2}) require(px >= 0.0f && px <= vp.virt_w);
+              for (float py : {y0, y1, y2}) {
+                require(py >= 0.0f && py <= vp.virt_h);
+                require(py < kMainViewTop || py > kMainViewBottom);
+              }
+              ++tri_count;
+            }, [&](Box box, std::string_view label, float size, uint32_t, Align align) {
+              check_box(box);
+              if (view == View::kMain) {
+                require(box.y1 <= 100.0f || box.y0 >= 624.0f ||
+                        (box.y0 >= kMainViewTop && box.y1 <= kMainViewBottom));
+              }
+              if (label.empty()) return;
+              float advance = 0;
+              for (size_t i = 0; i < label.size();) {
+                const uint32_t cp = dwg2::ui_assets::NextUtf8Codepoint(label, i);
+                require(pack.HasGlyph(cp));
+                advance += pack.GlyphForCodepoint(cp).advance;
+              }
+              const auto place = PlaceText(box, advance, size, align);
+              const Box fitted{place.x, place.y, place.x + advance * place.scale,
+                               place.y + 28.0f * place.scale};
+              constexpr float epsilon = 0.001f;
+              require(fitted.x0 >= box.x0 - epsilon && fitted.y0 >= box.y0 - epsilon);
+              require(fitted.x1 <= box.x1 + epsilon && fitted.y1 <= box.y1 + epsilon);
+              for (const auto& other : text_slots) {
+                require(fitted.x1 <= other.x0 || other.x1 <= fitted.x0 ||
+                        fitted.y1 <= other.y0 || other.y1 <= fitted.y0);
+              }
+              text_slots.push_back(fitted);
+              expected_title_visible |=
+                  (view == View::kMain && label == t.title_main) ||
+                  (view == View::kControlsWizard && label == t.title_wizard) ||
+                  (view == View::kConfirmRestart && label == t.restart_title) ||
+                  (view == View::kConfirmQuit && label == t.quit_title) ||
+                  (view == View::kConfirmLanguageRestart && label == t.lang_restart_title);
+              if (view == View::kMain && label == t.made_by) expected_blurb_visible = true;
+              if (view == View::kMain &&
+                  label == l10n::FormatVersion(snap.language, snap.version_text)) {
+                expected_version_visible = true;
+              }
+            }, [&](Box box, int id, int sub) {
+              check_box(box);
+              float x = (box.x0 + box.x1) / 2, y = (box.y0 + box.y1) / 2, vx = 0, vy = 0;
+              require(ScreenToVirtual(vp.ox + x * vp.scale, vp.oy + y * vp.scale,
+                                      float(width), float(height), vx, vy));
+              require(std::abs(vx - x) < 0.001f && std::abs(vy - y) < 0.001f);
+              hits.push_back({box.x0, box.y0, box.x1, box.y1, id, sub});
+            });
+            CHECK(geometry_ok);
+            CHECK(expected_title_visible);
+            CHECK(expected_blurb_visible == expect_about);
+            CHECK(expected_version_visible == expect_about);
+            if (view == View::kMain) {
+              const size_t expected_tris =
+                  ((snap.main_scroll > 0) ? 2u : 0u) +
+                  ((LastVisibleMainRow(snap.main_scroll) < kMainRowCount - 1) ? 2u : 0u);
+              CHECK(tri_count == expected_tris);
+            }
+            if (view == View::kConfirmRestart || view == View::kConfirmQuit ||
+                view == View::kConfirmLanguageRestart) {
+              CHECK(hits.size() == 2 && hits[0].id == kHitQuitYes && hits[1].id == kHitQuitNo);
+            }
           }
-        }, [&](Box box, std::string_view label, float size, uint32_t, Align align) {
-          check_box(box);
-          if (label.empty()) return;
-          float advance = 0;
-          for (unsigned char ch : label) {
-            require(ch < font.size() && font[ch].valid);
-            if (ch < font.size()) advance += font[ch].advance;
-          }
-          const auto place = PlaceText(box, advance, size, align);
-          const Box fitted{place.x, place.y, place.x + advance * place.scale,
-                           place.y + 28.0f * place.scale};
-          constexpr float epsilon = 0.001f;
-          require(fitted.x0 >= box.x0 - epsilon && fitted.y0 >= box.y0 - epsilon);
-          require(fitted.x1 <= box.x1 + epsilon && fitted.y1 <= box.y1 + epsilon);
-          for (const auto& other : text_slots) {
-            require(fitted.x1 <= other.x0 || other.x1 <= fitted.x0 ||
-                  fitted.y1 <= other.y0 || other.y1 <= fitted.y0);
-          }
-          text_slots.push_back(fitted);
-          expected_title_visible |=
-              (view == View::kMain && label == "Recomp Menu") ||
-              (view == View::kControlsWizard && label == "Controls Configuration") ||
-              (view == View::kConfirmRestart && label == "Restart Game?") ||
-              (view == View::kConfirmQuit && label == "Quit Game?");
-        }, [&](Box box, int id, int sub) {
-          check_box(box);
-          float x = (box.x0 + box.x1) / 2, y = (box.y0 + box.y1) / 2, vx = 0, vy = 0;
-          require(ScreenToVirtual(vp.ox + x * vp.scale, vp.oy + y * vp.scale,
-                                float(width), float(height), vx, vy));
-          require(std::abs(vx - x) < 0.001f && std::abs(vy - y) < 0.001f);
-          hits.push_back({box.x0, box.y0, box.x1, box.y1, id, sub});
-        });
-        CHECK(geometry_ok);
-        CHECK(expected_title_visible);
-        if (view == View::kConfirmRestart || view == View::kConfirmQuit) {
-          CHECK(hits.size() == 2 && hits[0].id == kHitQuitYes && hits[1].id == kHitQuitNo);
         }
       }
     }

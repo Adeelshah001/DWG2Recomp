@@ -15,11 +15,12 @@
 #include "input_config.h"
 #include "player_control_settings.h"
 #include "prompt_control.h"
+#include "recomp_menu_l10n.h"
 #include "video_control.h"
 
 namespace dwg2::recomp_menu {
 
-enum class View { kMain, kConfirmQuit, kConfirmRestart, kControlsWizard };
+enum class View { kMain, kConfirmQuit, kConfirmRestart, kConfirmLanguageRestart, kControlsWizard };
 
 enum MainItem : int {
   kRestart = 0,
@@ -34,6 +35,7 @@ enum MainItem : int {
   kTurbo,
   kButtonPrompts,
   kConfigureControls,
+  kLanguage,
   kCheckUpdates,
   kMainItemCount
 };
@@ -41,10 +43,13 @@ enum MainItem : int {
 enum HitId : int {
   kHitNone = 0,
   kHitMainRow,
+  kHitMainScrollUp,
+  kHitMainScrollDown,
   kHitResStop,
   kHitFovSlider,
   kHitFpsChoice,
   kHitPromptChoice,
+  kHitLanguageChoice,
   kHitToggleOff,
   kHitToggleOn,
   kHitQuitYes,
@@ -59,6 +64,75 @@ enum HitId : int {
   kHitWizBack,
   kHitClose
 };
+
+inline constexpr int kMainRowCount = 12;
+inline constexpr float kMainViewTop = 116.0f;
+inline constexpr float kMainViewBottom = 598.0f;
+
+constexpr float MainRowHeight(int row) {
+  switch (row) {
+    case 0: return 42.0f;
+    case 1:
+    case 5:
+    case 6:
+    case 7: return 38.0f;
+    case 2:
+    case 8:
+    case 9:
+    case 10: return 39.0f;
+    case 3:
+    case 11: return 52.0f;
+    case 4: return 67.0f;
+    default: return 0.0f;
+  }
+}
+
+constexpr float MainRowGap(int row) {
+  switch (row) {
+    case 0:
+    case 3:
+    case 7:
+    case 9:
+    case 10: return 12.0f;
+    case 1:
+    case 2:
+    case 4:
+    case 5:
+    case 6:
+    case 8: return 7.0f;
+    default: return 0.0f;
+  }
+}
+
+constexpr int FocusToMainRow(int focus) {
+  if (focus <= kQuitGame) return 0;
+  return std::clamp(focus - kQuitGame, 1, kMainRowCount - 1);
+}
+
+constexpr int MainRowToFocus(int row) {
+  const int r = std::clamp(row, 0, kMainRowCount - 1);
+  return (r == 0) ? kRestart : (kQuitGame + r);
+}
+
+constexpr int LastVisibleMainRow(int scroll) {
+  const int start = std::clamp(scroll, 0, kMainRowCount - 1);
+  float y = kMainViewTop;
+  int last = start;
+  for (int r = start; r < kMainRowCount; ++r) {
+    const float h = MainRowHeight(r);
+    if (r > start && y + h > kMainViewBottom) break;
+    last = r;
+    y += h + MainRowGap(r);
+  }
+  return last;
+}
+
+constexpr int MaxMainScroll() {
+  for (int s = 0; s < kMainRowCount; ++s) {
+    if (LastVisibleMainRow(s) >= kMainRowCount - 1) return s;
+  }
+  return kMainRowCount - 1;
+}
 
 inline constexpr int kWizVisibleRows = 9;
 inline constexpr float kSliderThumbRadius = 5.0f;
@@ -89,6 +163,7 @@ struct Actions {
   std::function<std::string(bool)> set_vsync;
   std::function<std::string(bool)> set_turbo;
   std::function<std::string(int)> set_prompts;
+  std::function<std::string(int)> apply_language;
   std::function<std::string()> check_updates;
   std::function<std::string(const std::array<dwg2::input::Profile, 3>&)> save_controls;
 
@@ -103,6 +178,7 @@ struct Actions {
   std::function<bool()> turbo;
   std::function<int()> prompt_choice;
   std::function<int()> prompt_style;
+  std::function<int()> language;
   std::function<std::string()> version_text;
 };
 
@@ -110,6 +186,7 @@ struct MenuSnapshot {
   bool open = false;
   View view = View::kMain;
   int focus = 0;
+  int main_scroll = 0;
   bool confirm_quit_yes = false;
 
   int wiz_profile = 0;
@@ -132,6 +209,8 @@ struct MenuSnapshot {
   bool turbo = false;
   int prompt_choice = 0;
   int prompt_style = 1;
+  int language = kLangEnglish;
+  int pending_language = kLangEnglish;
   std::string version_text;
 };
 
@@ -173,7 +252,11 @@ struct State {
   std::mutex mutex;
   View view = View::kMain;
   int focus = kRestart;
+  int main_scroll = 0;
   bool confirm_quit_yes = false;
+  int active_language = kLangEnglish;
+  int pending_language = kLangEnglish;
+  bool pending_language_dirty = false;
 
   int wiz_profile = 0;
   int wiz_cursor = 0;
@@ -192,6 +275,7 @@ struct State {
 
   std::vector<HitRect> hit_rects;
   View hit_view = View::kMain;
+  int hit_main_scroll = 0;
   int hit_wiz_scroll = 0;
   int dragging_hit = kHitNone;
   HitRect drag_rect{};
@@ -214,6 +298,24 @@ inline void SetToastLocked(State& s, const std::string& msg, uint64_t now_ms) {
   s.toast_expiry_ms = now_ms > 0 ? (now_ms + kToastDurationMs) : 0;
 }
 
+inline void EnsureMainScrollLocked(State& s) {
+  const int max_scroll = MaxMainScroll();
+  const int focus_row = FocusToMainRow(s.focus);
+  if (focus_row < s.main_scroll) s.main_scroll = focus_row;
+  while (focus_row > LastVisibleMainRow(s.main_scroll) && s.main_scroll < max_scroll) {
+    ++s.main_scroll;
+  }
+  s.main_scroll = std::clamp(s.main_scroll, 0, max_scroll);
+}
+
+inline void ClampMainFocusToViewLocked(State& s) {
+  const int first = std::clamp(s.main_scroll, 0, MaxMainScroll());
+  const int last = LastVisibleMainRow(first);
+  const int focus_row = FocusToMainRow(s.focus);
+  if (focus_row < first) s.focus = MainRowToFocus(first);
+  else if (focus_row > last) s.focus = MainRowToFocus(last);
+}
+
 inline void EnsureWizScrollLocked(State& s) {
   const int max_scroll = std::max(0, dwg2::input::Count - kWizVisibleRows);
   if (s.wiz_cursor < dwg2::input::Count) {
@@ -225,6 +327,11 @@ inline void EnsureWizScrollLocked(State& s) {
   s.wiz_scroll = std::clamp(s.wiz_scroll, 0, max_scroll);
 }
 
+inline void SyncLanguageLocked(State& s, const Actions& act) {
+  if (act.language) s.active_language = NormalizeLanguage(act.language());
+  if (!s.pending_language_dirty) s.pending_language = s.active_language;
+}
+
 inline void SetOpenLocked(State& s, bool value, bool wait_close_release) {
   const bool was = open.load(std::memory_order_acquire);
   open.store(value, std::memory_order_release);
@@ -232,7 +339,11 @@ inline void SetOpenLocked(State& s, bool value, bool wait_close_release) {
     s.hit_rects.clear();
     s.view = View::kMain;
     s.focus = kRestart;
+    s.main_scroll = 0;
+    s.hit_main_scroll = 0;
     s.confirm_quit_yes = false;
+    s.pending_language_dirty = false;
+    s.pending_language = s.active_language;
     s.capturing_action = -1;
     capturing.store(false, std::memory_order_release);
     s.toast.clear();
@@ -248,6 +359,8 @@ inline void SetOpenLocked(State& s, bool value, bool wait_close_release) {
     s.gp_close_wait_release = wait_close_release;
     s.kb_close_wait_release = wait_close_release;
   } else if (!value) {
+    s.pending_language_dirty = false;
+    s.pending_language = s.active_language;
     s.capturing_action = -1;
     capturing.store(false, std::memory_order_release);
     s.dragging_hit = kHitNone;
@@ -276,19 +389,19 @@ inline void BeginCaptureLocked(State& s, int action_idx, uint64_t now_ms) {
   s.blocked_gp = s.last_gp;
   s.modifier_candidate = 0;
   s.modifier_bits = 0;
-  SetToastLocked(s,
-                 s.wiz_profile == 0
-                     ? "Press a key or combo (Esc cancels)."
-                     : "Press a button, trigger or stick (Esc/Back cancels).",
-                 now_ms);
+  const auto& t = l10n::Get(s.active_language);
+  SetToastLocked(s, s.wiz_profile == 0 ? t.toast_capture_kb : t.toast_capture_gp, now_ms);
 }
 
 inline bool TrySaveWizard(State& s, const Actions& act, uint64_t now_ms) {
   std::array<dwg2::input::Profile, 3> copy;
+  int lang = kLangEnglish;
   {
     std::lock_guard lock(s.mutex);
     copy = s.working_profiles;
+    lang = s.active_language;
   }
+  const auto& t = l10n::Get(lang);
   std::string err;
   bool ok = true;
   if (act.save_controls) {
@@ -296,13 +409,13 @@ inline bool TrySaveWizard(State& s, const Actions& act, uint64_t now_ms) {
     ok = err.empty();
   } else {
     ok = dwg2::input::SavePlayerControls(copy);
-    if (!ok) err = "Could not save settings.ini.";
+    if (!ok) err = t.toast_save_err;
   }
   if (ok) {
     for (int i = 0; i < 3; ++i) dwg2::input::Set(i, copy[i]);
   }
   std::lock_guard lock(s.mutex);
-  SetToastLocked(s, ok ? "Mappings saved and applied." : err, now_ms);
+  SetToastLocked(s, ok ? t.toast_saved_controls : err, now_ms);
   return ok;
 }
 
@@ -331,6 +444,7 @@ enum class PendingOp {
   kSetVsync,
   kSetTurbo,
   kSetPrompts,
+  kApplyLanguageAndRestart,
   kCheckUpdates,
   kSaveWizard
 };
@@ -376,6 +490,9 @@ inline void ExecuteCommand(const Command& cmd, const Actions& act, uint64_t now_
       break;
     case PendingOp::kSetPrompts:
       if (act.set_prompts) toast = act.set_prompts(cmd.ival);
+      break;
+    case PendingOp::kApplyLanguageAndRestart:
+      if (act.apply_language) toast = act.apply_language(cmd.ival);
       break;
     case PendingOp::kCheckUpdates:
       if (act.check_updates) toast = act.check_updates();
@@ -436,6 +553,18 @@ inline Command BuildMainActivateLocked(State& s, int item, const Actions& act, i
     case kConfigureControls:
       EnterWizardLocked(s, preferred_profile);
       return {};
+    case kLanguage: {
+      const int target = s.pending_language_dirty ? s.pending_language : s.active_language;
+      if (target == s.active_language) {
+        s.pending_language_dirty = false;
+        s.pending_language = s.active_language;
+        return {};
+      }
+      s.pending_language = target;
+      s.view = View::kConfirmLanguageRestart;
+      s.confirm_quit_yes = false;
+      return {};
+    }
     case kCheckUpdates:
       return {PendingOp::kCheckUpdates};
     default:
@@ -443,7 +572,7 @@ inline Command BuildMainActivateLocked(State& s, int item, const Actions& act, i
   }
 }
 
-inline Command BuildMainHorizLocked(int item, int dir, const Actions& act) {
+inline Command BuildMainHorizLocked(State& s, int item, int dir, const Actions& act) {
   static constexpr int kFpsOpts[3] = {60, 120, 0};
   switch (item) {
     case kFullscreen:
@@ -476,6 +605,12 @@ inline Command BuildMainHorizLocked(int item, int dir, const Actions& act) {
       int next = StepChoice(dwg2::prompts::kMenuOrder, 9, cur, dir, true);
       return next != cur ? Command{PendingOp::kSetPrompts, false, next} : Command{};
     }
+    case kLanguage: {
+      const int cur = s.pending_language_dirty ? s.pending_language : s.active_language;
+      s.pending_language = StepChoice(kLanguageOrder, 5, cur, dir, true);
+      s.pending_language_dirty = true;
+      return {};
+    }
     default:
       return {};
   }
@@ -499,24 +634,37 @@ inline Command NavigateLocked(State& s, int v_step, int h_step, bool confirm, bo
       } else {
         s.focus += v_step;
       }
+      EnsureMainScrollLocked(s);
     }
     if (h_step != 0) {
       if (s.focus <= kQuitGame) {
         s.focus = kRestart + ((s.focus - kRestart + h_step + 3) % 3);
+        EnsureMainScrollLocked(s);
         return {};
       }
-      return BuildMainHorizLocked(s.focus, h_step, act);
+      EnsureMainScrollLocked(s);
+      return BuildMainHorizLocked(s, s.focus, h_step, act);
     }
-    if (confirm) return BuildMainActivateLocked(s, s.focus, act, preferred_profile);
+    if (confirm) {
+      EnsureMainScrollLocked(s);
+      return BuildMainActivateLocked(s, s.focus, act, preferred_profile);
+    }
     return {};
   }
 
-  if (s.view == View::kConfirmQuit || s.view == View::kConfirmRestart) {
+  if (s.view == View::kConfirmQuit || s.view == View::kConfirmRestart ||
+      s.view == View::kConfirmLanguageRestart) {
+    const bool is_lang_restart = (s.view == View::kConfirmLanguageRestart);
     const bool is_restart = (s.view == View::kConfirmRestart);
-    const int return_focus = is_restart ? kRestart : kQuitGame;
+    const int return_focus = is_lang_restart ? kLanguage : (is_restart ? kRestart : kQuitGame);
     if (back) {
       s.view = View::kMain;
       s.focus = return_focus;
+      EnsureMainScrollLocked(s);
+      if (is_lang_restart) {
+        s.pending_language_dirty = false;
+        s.pending_language = s.active_language;
+      }
       return {};
     }
     if (h_step < 0) s.confirm_quit_yes = true;
@@ -524,9 +672,18 @@ inline Command NavigateLocked(State& s, int v_step, int h_step, bool confirm, bo
     else if (v_step != 0) s.confirm_quit_yes = !s.confirm_quit_yes;
     if (confirm) {
       if (s.confirm_quit_yes) {
+        if (is_lang_restart) {
+          const int lang = NormalizeLanguage(s.pending_language);
+          s.view = View::kMain;
+          s.focus = kLanguage;
+          EnsureMainScrollLocked(s);
+          s.pending_language_dirty = false;
+          return {PendingOp::kApplyLanguageAndRestart, false, lang};
+        }
         if (is_restart) {
           s.view = View::kMain;
           s.focus = kRestart;
+          EnsureMainScrollLocked(s);
           return {PendingOp::kRestart};
         }
         SetOpenLocked(s, false, false);
@@ -534,6 +691,11 @@ inline Command NavigateLocked(State& s, int v_step, int h_step, bool confirm, bo
       }
       s.view = View::kMain;
       s.focus = return_focus;
+      EnsureMainScrollLocked(s);
+      if (is_lang_restart) {
+        s.pending_language_dirty = false;
+        s.pending_language = s.active_language;
+      }
     }
     return {};
   }
@@ -542,6 +704,7 @@ inline Command NavigateLocked(State& s, int v_step, int h_step, bool confirm, bo
   if (back) {
     s.view = View::kMain;
     s.focus = kConfigureControls;
+    EnsureMainScrollLocked(s);
     return {};
   }
   if (wiz_prof_step != 0) {
@@ -565,19 +728,20 @@ inline Command NavigateLocked(State& s, int v_step, int h_step, bool confirm, bo
   if (clear_wiz && s.wiz_cursor >= 0 && s.wiz_cursor < dwg2::input::Count) {
     s.working_profiles[s.wiz_profile].bind[s.wiz_cursor] = {};
     s.working_profiles[s.wiz_profile].alternate[s.wiz_cursor] = {};
-    SetToastLocked(s, "Binding cleared. Save to apply.", now_ms);
+    SetToastLocked(s, l10n::Get(s.active_language).toast_cleared, now_ms);
   }
   if (confirm) {
     if (s.wiz_cursor >= 0 && s.wiz_cursor < dwg2::input::Count) {
       BeginCaptureLocked(s, s.wiz_cursor, now_ms);
     } else if (s.wiz_cursor == kWizDefaults) {
       s.working_profiles[s.wiz_profile] = dwg2::input::Defaults(s.wiz_profile);
-      SetToastLocked(s, "Defaults restored. Save to apply.", now_ms);
+      SetToastLocked(s, l10n::Get(s.active_language).toast_defaults, now_ms);
     } else if (s.wiz_cursor == kWizSave) {
       return {PendingOp::kSaveWizard};
     } else if (s.wiz_cursor == kWizBack) {
       s.view = View::kMain;
       s.focus = kConfigureControls;
+      EnsureMainScrollLocked(s);
     }
   }
   return {};
@@ -602,10 +766,14 @@ inline MenuSnapshot Snapshot(const Actions& act = {}, uint64_t now_ms = 0) {
   auto& s = detail::GetState();
   {
     std::lock_guard lock(s.mutex);
+    detail::SyncLanguageLocked(s, act);
     snap.open = open.load(std::memory_order_acquire);
     snap.view = s.view;
     snap.focus = s.focus;
+    snap.main_scroll = s.main_scroll;
     snap.confirm_quit_yes = s.confirm_quit_yes;
+    snap.language = s.active_language;
+    snap.pending_language = s.pending_language_dirty ? s.pending_language : s.active_language;
     snap.wiz_profile = s.wiz_profile;
     snap.wiz_cursor = s.wiz_cursor;
     snap.wiz_scroll = s.wiz_scroll;
@@ -631,25 +799,26 @@ inline MenuSnapshot Snapshot(const Actions& act = {}, uint64_t now_ms = 0) {
   return snap;
 }
 
-inline std::string BindingLabel(dwg2::input::Binding b, int type) {
-  if (!b.kind) return "Unbound";
+inline std::string BindingLabel(dwg2::input::Binding b, int type, int lang = kLangEnglish) {
+  const auto& t = l10n::Get(lang);
+  if (!b.kind) return t.bind_unbound;
   if (b.kind == 2) {
-    static constexpr const char* kXbox[26] = {
+    const char* xbox[26] = {
         "A", "B", "X", "Y", "View", "Guide", "Menu", "L3", "R3", "LB", "RB",
-        "D-Pad Up", "D-Pad Down", "D-Pad Left", "D-Pad Right", "Misc 1",
+        t.bind_dpad_up, t.bind_dpad_down, t.bind_dpad_left, t.bind_dpad_right, "Misc 1",
         "Paddle 1", "Paddle 2", "Paddle 3", "Paddle 4", "Touchpad",
         "Misc 2", "Misc 3", "Misc 4", "Misc 5", "Misc 6"};
     static constexpr const char* kPs[11] = {
         "Cross", "Circle", "Square", "Triangle", "Create", "PS", "Options",
         "L3", "R3", "L1", "R1"};
-    if (b.code < 0 || b.code >= 26) return "Button ?";
-    return (type == 1 && b.code < 11) ? kPs[b.code] : kXbox[b.code];
+    if (b.code < 0 || b.code >= 26) return t.bind_button_unknown;
+    return (type == 1 && b.code < 11) ? kPs[b.code] : xbox[b.code];
   }
   if (b.kind == 3) {
-    static constexpr const char* kAxes[6] = {
-        "Left Stick X", "Left Stick Y", "Right Stick X", "Right Stick Y", "LT / L2", "RT / R2"};
-    if (b.code < 0 || b.code >= 6) return "Axis ?";
-    std::string text = kAxes[b.code];
+    const char* axes[6] = {
+        t.bind_ls_x, t.bind_ls_y, t.bind_rs_x, t.bind_rs_y, "LT / L2", "RT / R2"};
+    if (b.code < 0 || b.code >= 6) return t.bind_axis_unknown;
+    std::string text = axes[b.code];
     if (b.code < 4) text += (b.sign < 0) ? " -" : " +";
     return text;
   }
@@ -672,7 +841,7 @@ inline std::string BindingLabel(dwg2::input::Binding b, int type) {
       case 17: text += "Ctrl"; break;
       case 18: text += "Alt"; break;
       case 27: text += "Esc"; break;
-      case 32: text += "Space"; break;
+      case 32: text += t.bind_space; break;
       case 33: text += "Page Up"; break;
       case 34: text += "Page Down"; break;
       case 35: text += "End"; break;
@@ -694,7 +863,7 @@ inline std::string BindingLabel(dwg2::input::Binding b, int type) {
       case 220: text += "Backslash"; break;
       case 221: text += "]"; break;
       case 222: text += "Apostrophe"; break;
-      default: text += "Key " + std::to_string(b.code); break;
+      default: text += std::string(t.bind_key_prefix) + std::to_string(b.code); break;
     }
   }
   return text;
@@ -713,6 +882,7 @@ inline void HandleGamepad(const dwg2::input::Raw& raw, int family, uint64_t now_
   {
     auto& s = detail::GetState();
     std::lock_guard lock(s.mutex);
+    detail::SyncLanguageLocked(s, act);
     s.last_gp = raw;
 
     if (s.capturing_action >= 0) {
@@ -720,7 +890,7 @@ inline void HandleGamepad(const dwg2::input::Raw& raw, int family, uint64_t now_
         s.capturing_action = -1;
         capturing.store(false, std::memory_order_release);
         s.prev_gp_close = close_down;
-        detail::SetToastLocked(s, "Binding cancelled.", now_ms);
+        detail::SetToastLocked(s, l10n::Get(s.active_language).toast_cancelled, now_ms);
         return;
       }
       if (!raw.buttons[4]) s.blocked_gp.buttons[4] = false;
@@ -751,7 +921,7 @@ inline void HandleGamepad(const dwg2::input::Raw& raw, int family, uint64_t now_
           s.prev_lb = raw.buttons[9];
           s.prev_rb = raw.buttons[10];
           s.prev_gp_close = close_down;
-          detail::SetToastLocked(s, "Binding updated. Save to apply.", now_ms);
+          detail::SetToastLocked(s, l10n::Get(s.active_language).toast_updated, now_ms);
         }
       }
       return;
@@ -807,6 +977,7 @@ inline void HandleKeyboard(const dwg2::input::Raw& raw, uint64_t now_ms, const A
   {
     auto& s = detail::GetState();
     std::lock_guard lock(s.mutex);
+    detail::SyncLanguageLocked(s, act);
     s.last_kb = raw;
 
     if (s.capturing_action >= 0) {
@@ -815,7 +986,7 @@ inline void HandleKeyboard(const dwg2::input::Raw& raw, uint64_t now_ms, const A
         capturing.store(false, std::memory_order_release);
         s.prev_esc = true;
         s.prev_kb_close = close_down;
-        detail::SetToastLocked(s, "Binding cancelled.", now_ms);
+        detail::SetToastLocked(s, l10n::Get(s.active_language).toast_cancelled, now_ms);
         return;
       }
       if (!raw.keys[27]) s.blocked_keys[27] = false;
@@ -852,7 +1023,7 @@ inline void HandleKeyboard(const dwg2::input::Raw& raw, uint64_t now_ms, const A
           s.prev_back = raw.keys[8];
           s.prev_del = raw.keys[46];
           s.prev_kb_close = close_down;
-          detail::SetToastLocked(s, "Binding updated. Save to apply.", now_ms);
+          detail::SetToastLocked(s, l10n::Get(s.active_language).toast_updated, now_ms);
         }
       }
       return;
@@ -902,11 +1073,13 @@ inline void HandleKeyboard(const dwg2::input::Raw& raw, uint64_t now_ms, const A
   detail::ExecuteCommand(cmd, act, now_ms);
 }
 
-inline void UpdateHitRects(const std::vector<HitRect>& rects, View view, int wiz_scroll) {
+inline void UpdateHitRects(const std::vector<HitRect>& rects, View view, int main_scroll,
+                           int wiz_scroll) {
   auto& s = detail::GetState();
   std::lock_guard lock(s.mutex);
   s.hit_rects = rects;
   s.hit_view = view;
+  s.hit_main_scroll = main_scroll;
   s.hit_wiz_scroll = wiz_scroll;
 }
 
@@ -919,6 +1092,7 @@ inline void InvalidateHitRects() {
 
 inline bool HitLayoutCurrent(const detail::State& s) {
   return s.hit_view == s.view &&
+         (s.view != View::kMain || s.hit_main_scroll == s.main_scroll) &&
          (s.view != View::kControlsWizard || s.hit_wiz_scroll == s.wiz_scroll);
 }
 
@@ -962,6 +1136,7 @@ inline void HandleMouseMove(float vx, float vy, const Actions& act = {}) {
   {
     auto& s = detail::GetState();
     std::lock_guard lock(s.mutex);
+    detail::SyncLanguageLocked(s, act);
     if (s.capturing_action >= 0 || !HitLayoutCurrent(s)) return;
 
     if (s.dragging_hit == kHitFovSlider && s.view == View::kMain) {
@@ -987,11 +1162,15 @@ inline void HandleMouseMove(float vx, float vy, const Actions& act = {}) {
           s.focus = kFps;
         } else if (r.id == kHitPromptChoice) {
           s.focus = kButtonPrompts;
+        } else if (r.id == kHitLanguageChoice) {
+          s.focus = kLanguage;
         } else if (r.id == kHitQuitYes &&
-                   (s.view == View::kConfirmQuit || s.view == View::kConfirmRestart)) {
+                   (s.view == View::kConfirmQuit || s.view == View::kConfirmRestart ||
+                    s.view == View::kConfirmLanguageRestart)) {
           s.confirm_quit_yes = true;
         } else if (r.id == kHitQuitNo &&
-                   (s.view == View::kConfirmQuit || s.view == View::kConfirmRestart)) {
+                   (s.view == View::kConfirmQuit || s.view == View::kConfirmRestart ||
+                    s.view == View::kConfirmLanguageRestart)) {
           s.confirm_quit_yes = false;
         } else if (r.id == kHitWizRow && s.view == View::kControlsWizard && r.sub >= 0 &&
                    r.sub < dwg2::input::Count) {
@@ -1011,6 +1190,7 @@ inline bool HandleMouseDown(float vx, float vy, const Actions& act, uint64_t now
   {
     auto& s = detail::GetState();
     std::lock_guard lock(s.mutex);
+    detail::SyncLanguageLocked(s, act);
     if (s.capturing_action >= 0 || !HitLayoutCurrent(s)) return false;
 
     for (auto it = s.hit_rects.rbegin(); it != s.hit_rects.rend(); ++it) {
@@ -1025,6 +1205,18 @@ inline bool HandleMouseDown(float vx, float vy, const Actions& act, uint64_t now
           if (s.view == View::kMain && r.sub >= 0 && r.sub < kMainItemCount) {
             s.focus = r.sub;
             cmd = detail::BuildMainActivateLocked(s, r.sub, act, 0);
+          }
+          break;
+        case kHitMainScrollUp:
+          if (s.view == View::kMain) {
+            s.main_scroll = std::clamp(s.main_scroll - 1, 0, MaxMainScroll());
+            detail::ClampMainFocusToViewLocked(s);
+          }
+          break;
+        case kHitMainScrollDown:
+          if (s.view == View::kMain) {
+            s.main_scroll = std::clamp(s.main_scroll + 1, 0, MaxMainScroll());
+            detail::ClampMainFocusToViewLocked(s);
           }
           break;
         case kHitResStop:
@@ -1062,16 +1254,30 @@ inline bool HandleMouseDown(float vx, float vy, const Actions& act, uint64_t now
             }
           }
           break;
+        case kHitLanguageChoice:
+          if (s.view == View::kMain) {
+            s.focus = kLanguage;
+            if (r.sub == -1 || r.sub == -2) {
+              const int cur = s.pending_language_dirty ? s.pending_language : s.active_language;
+              const int dir = (r.sub == -1) ? -1 : 1;
+              s.pending_language = detail::StepChoice(kLanguageOrder, 5, cur, dir, true);
+              s.pending_language_dirty = true;
+            } else if (r.sub == 0) {
+              cmd = detail::BuildMainActivateLocked(s, kLanguage, act, 0);
+            }
+          }
+          break;
         case kHitToggleOff:
         case kHitToggleOn:
           if (s.view == View::kMain) {
             s.focus = r.sub;
-            cmd = detail::BuildMainHorizLocked(r.sub, r.id == kHitToggleOn ? 1 : -1, act);
+            cmd = detail::BuildMainHorizLocked(s, r.sub, r.id == kHitToggleOn ? 1 : -1, act);
           }
           break;
         case kHitQuitYes:
         case kHitQuitNo:
-          if (s.view == View::kConfirmQuit || s.view == View::kConfirmRestart) {
+          if (s.view == View::kConfirmQuit || s.view == View::kConfirmRestart ||
+              s.view == View::kConfirmLanguageRestart) {
             cmd = detail::NavigateLocked(s, 0, r.id == kHitQuitYes ? -1 : 1, true,
                                          false, false, 0, act, now_ms, 0);
           }
@@ -1107,7 +1313,7 @@ inline bool HandleMouseDown(float vx, float vy, const Actions& act, uint64_t now
           if (s.view == View::kControlsWizard) {
             s.wiz_cursor = kWizDefaults;
             s.working_profiles[s.wiz_profile] = dwg2::input::Defaults(s.wiz_profile);
-            detail::SetToastLocked(s, "Defaults restored. Save to apply.", now_ms);
+            detail::SetToastLocked(s, l10n::Get(s.active_language).toast_defaults, now_ms);
           }
           break;
         case kHitWizSave:
@@ -1120,6 +1326,7 @@ inline bool HandleMouseDown(float vx, float vy, const Actions& act, uint64_t now
           if (s.view == View::kControlsWizard) {
             s.view = View::kMain;
             s.focus = kConfigureControls;
+            detail::EnsureMainScrollLocked(s);
           }
           break;
         default:
@@ -1143,10 +1350,15 @@ inline void HandleMouseWheel(float delta) {
   if (!IsOpen() || delta == 0.0f) return;
   auto& s = detail::GetState();
   std::lock_guard lock(s.mutex);
-  if (s.view != View::kControlsWizard || s.capturing_action >= 0) return;
+  if (s.capturing_action >= 0) return;
   const int step = delta > 0.0f ? -1 : 1;
-  const int max_scroll = std::max(0, dwg2::input::Count - kWizVisibleRows);
-  s.wiz_scroll = std::clamp(s.wiz_scroll + step, 0, max_scroll);
+  if (s.view == View::kMain) {
+    s.main_scroll = std::clamp(s.main_scroll + step, 0, MaxMainScroll());
+    detail::ClampMainFocusToViewLocked(s);
+  } else if (s.view == View::kControlsWizard) {
+    const int max_scroll = std::max(0, dwg2::input::Count - kWizVisibleRows);
+    s.wiz_scroll = std::clamp(s.wiz_scroll + step, 0, max_scroll);
+  }
 }
 
 }  // namespace dwg2::recomp_menu

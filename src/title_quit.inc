@@ -45,6 +45,17 @@ extern "C" void sub_821771D8(PPCContext& ctx,uint8_t* base) {
 extern "C" void __imp__sub_82177278(PPCContext&,uint8_t*);
 extern "C" void __imp__sub_8213EF88(PPCContext&,uint8_t*);
 extern "C" void __imp__sub_821409B8(PPCContext&,uint8_t*);
+extern "C" void __imp__sub_82130E30(PPCContext&,uint8_t*);
+extern "C" void __imp__sub_8211AA28(PPCContext&,uint8_t*);
+extern "C" void __imp__sub_8212DC40(PPCContext&,uint8_t*);
+static void Dwg2WidgetRect(PPCContext& ctx,uint8_t* base,int x,int y,int width,int height,uint32_t rgba) {
+ if(ctx.r1.u32<2048)return;
+ const auto saved=ctx;std::fenv_t environment;std::fegetenv(&environment);
+ ctx.r1.u32-=512;const auto rect=ctx.r1.u32+128,col=rect+16;
+ REX_STORE_U32(rect,uint32_t(x));REX_STORE_U32(rect+4,uint32_t(y));REX_STORE_U32(rect+8,uint32_t(width));REX_STORE_U32(rect+12,uint32_t(height));REX_STORE_U32(col,rgba);
+ ctx.r3.u32=1;__imp__sub_8212DC40(ctx,base);ctx.r1.u32=saved.r1.u32-512;ctx.r3.u32=rect;ctx.r4.u32=col;__imp__sub_8211AA28(ctx,base);
+ ctx=saved;std::fesetenv(&environment);
+}
 static void Dwg2TitleQuitDraw(PPCContext& ctx,uint8_t* base) {
  const auto saved=ctx;std::fenv_t environment;std::fegetenv(&environment);
  constexpr uint32_t style=0x826DAEB0u+0x1A800u;
