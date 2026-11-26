@@ -6,6 +6,7 @@
 </p>
 <p align="center">A Windows PC recompilation of Dynasty Warriors: Gundam 2.</p>
 <p align="center"><a href="https://github.com/Adeelshah001/DWG2Recomp/releases/latest"><strong>Download the latest release</strong></a></p>
+<p align="center"><a href="https://ko-fi.com/adeelshah"><img src="https://img.shields.io/badge/Support%20me%20on%20Ko--fi-FF5E5B?style=for-the-badge&amp;logo=kofi&amp;logoColor=white" alt="Support me on Ko-fi"></a></p>
 
 ## Features
 
