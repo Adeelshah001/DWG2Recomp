@@ -24,7 +24,7 @@ body:
     attributes:
       label: Log File
       description: |
-        Attach the latest log file from the `logs` folder in your game directory, preferably from the session in which the issue occurred. Remove any sensitive personal information before uploading.
+        Open the `logs` folder in your game directory and attach the newest log file matching this filename format: `dwg2-20261030-032206-18048.log` (example). Preferably use the log from the session in which the issue occurred. Remove any sensitive personal information before uploading.
     validations:
       required: true
       accept: ".log,.txt,.zip"
