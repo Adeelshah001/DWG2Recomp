@@ -11,7 +11,7 @@
 
 - **Recomp Menu:** opens with L2, LT, the PS5 touchpad, or F1. Pause and resume gameplay, or confirm Restart and Quit from the overlay.
 - **Graphics options:** include live 720p, 1440p, and 2160p resolution, a field-of-view slider up to +100%, VSync, and an FPS counter. Presentation above 60 FPS is experimental.
-- **Custom controls:** let you remap keyboard, Xbox, and PlayStation inputs and automatically switch button prompts with the active device.
+- **Custom controls:** lets you remap controller inputs and supports visual icons for up to 8 controller types (PS3, PS4, PS5, XBOX 360, XBOX ONE, XBOX SERIES, SWITCH, KEYBOARD).
 - **Turbo Mode:** Added Turbo Mode(+10%) toggle under Performance in the Recomp Menu (increases active-battle speed by 10% while keeping sound, menus, FMVs, and gated cutscenes at normal speed). Note: Turbo Mode is very experimental and has not been broadly tested across all missions, cutscenes, or timers yet
 - **Language options:** English, French, German, Italian and Spanish. Change from the Recomp Menu, confirming shows a Restart Required prompt and the game restarts directly into the chosen language.
 
