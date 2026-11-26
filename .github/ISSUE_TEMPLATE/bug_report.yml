@@ -1,0 +1,63 @@
+name: Bug Report
+description: Report a bug or technical issue with DWG2Recomp.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: system-specifications
+    attributes:
+      label: System Specifications
+      description: Provide your device hardware, operating system, and game version.
+      placeholder: |
+        Device / Model:
+        CPU:
+        GPU:
+        RAM:
+        Operating System:
+        GPU Driver Version:
+        DWG2Recomp Version:
+    validations:
+      required: true
+
+  - type: upload
+    id: log-file
+    attributes:
+      label: Log File
+      description: |
+        Attach the latest log file from the `logs` folder in your game directory, preferably from the session in which the issue occurred. Remove any sensitive personal information before uploading.
+    validations:
+      required: true
+      accept: ".log,.txt,.zip"
+
+  - type: upload
+    id: settings-file
+    attributes:
+      label: Settings File (Optional)
+      description: |
+        Attach `settings.ini` from the root game folder. Compress it into a ZIP file or upload a copy renamed to `settings.txt`. Do not rename the original game file.
+    validations:
+      required: false
+      accept: ".zip,.txt"
+
+  - type: textarea
+    id: additional-comments
+    attributes:
+      label: Additional Comments (Optional)
+      description: Describe the issue and include any information that may help reproduce or diagnose it.
+      placeholder: |
+        Issue description:
+        Steps to reproduce:
+        Expected behaviour:
+        Actual behaviour:
+        Additional information:
+    validations:
+      required: false
+
+  - type: upload
+    id: screenshots
+    attributes:
+      label: Screenshots or Videos (Recommended)
+      description: Attach screenshots or videos if relevant to the issue, especially for graphical, gameplay, or UI problems.
+    validations:
+      required: false
+      accept: ".png,.jpg,.jpeg,.webp,.gif,.mp4,.mov,.webm"
