@@ -330,7 +330,17 @@ REX_HOOK_RAW(sub_82545F60) {
   __imp__sub_82545F60(ctx, base);
   // This pair feeds both accumulated scene time and the virtual tick's delta.
   if (fixed_battle_step && return_address == 0x82128B00) {
-    ctx.f1.f64 = dwg2::timing::BattleStepNumerator(Dwg2TurboEnabled(), IsPureActiveGameplay(base));
+    const bool turbo_setting = Dwg2TurboEnabled();
+    const bool pure_battle = IsPureActiveGameplay(base);
+    const double step_num = dwg2::timing::BattleStepNumerator(turbo_setting, pure_battle);
+    ctx.f1.f64 = step_num;
+    static thread_local int last_turbo_state = -1;
+    const int turbo_state = (step_num > 1.0) ? 1 : 0;
+    if (turbo_state != last_turbo_state) {
+      last_turbo_state = turbo_state;
+      REXLOG_INFO("DWG2 turbo battle step: active={} scale={:.2f} (setting={} pure_battle={})",
+                  turbo_state != 0, step_num, turbo_setting, pure_battle);
+    }
   }
   if (fixed_battle_step && return_address == 0x82128B14) ctx.f1.f64 = 60.0;
 }

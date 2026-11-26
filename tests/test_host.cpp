@@ -473,7 +473,7 @@ int main() {
     bool m_paused = false, m_full = false, m_fps_cnt = false, m_vsync = false, m_turbo = false,
          m_quit = false;
     int m_res = 1, m_fov = 0, m_fps = 60, m_prompts = 0, m_lang = 1, m_save_calls = 0,
-        m_restarts = 0, m_lang_restarts = 0, m_update_checks = 0;
+        m_restarts = 0, m_lang_restarts = 0, m_update_checks = 0, m_turbo_set_calls = 0;
 
     dwg2::recomp_menu::Actions act{};
     act.restart = [&]() -> std::string { ++m_restarts; return "Restart unavailable."; };
@@ -486,7 +486,7 @@ int main() {
     act.set_fps = [&](int f) -> std::string { m_fps = f; return {}; };
     act.set_fps_counter = [&](bool v) -> std::string { m_fps_cnt = v; return {}; };
     act.set_vsync = [&](bool v) -> std::string { m_vsync = v; return {}; };
-    act.set_turbo = [&](bool v) -> std::string { m_turbo = v; return {}; };
+    act.set_turbo = [&](bool v) -> std::string { ++m_turbo_set_calls; m_turbo = v; return {}; };
     act.set_prompts = [&](int p) -> std::string { m_prompts = p; return {}; };
     act.apply_language = [&](int lang) -> std::string {
       m_lang = lang;
@@ -514,7 +514,7 @@ int main() {
     dwg2::recomp_menu::Toggle(false);
     CHECK(dwg2::recomp_menu::IsOpen());
     CHECK(dwg2::recomp_menu::Snapshot(act).view == dwg2::recomp_menu::View::kMain);
-    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kRestart);
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kPause);
 
     uint64_t now = 100;
     auto kb_tap = [&](int vk) {
@@ -526,6 +526,12 @@ int main() {
       now += 20;
     };
 
+    kb_tap(13);  // Pause/Resume on left col (0)
+    CHECK(m_paused && dwg2::recomp_menu::Snapshot(act).paused);
+    kb_tap(13);
+    CHECK(!m_paused && dwg2::recomp_menu::IsOpen());
+    kb_tap(39);  // Pause -> Restart (middle col 1)
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kRestart);
     kb_tap(13);
     auto restart = dwg2::recomp_menu::Snapshot(act);
     CHECK(restart.view == dwg2::recomp_menu::View::kConfirmRestart && !restart.confirm_quit_yes);
@@ -539,47 +545,43 @@ int main() {
     kb_tap(13);
     CHECK(m_restarts == 1 && dwg2::recomp_menu::IsOpen());
     CHECK(dwg2::recomp_menu::Snapshot(act).toast == "Restart unavailable.");
-    // Row-1 left/right wrap + up/down row navigation.
-    kb_tap(39);  // Restart -> Pause
+    // Row-1 left/right wrap + up/down row navigation (Pause | Restart | Quit Game).
+    kb_tap(39);  // Restart -> Quit Game
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kQuitGame);
+    kb_tap(39);  // Quit Game -> Pause (wrap right)
     CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kPause);
-    kb_tap(13);
-    CHECK(m_paused && dwg2::recomp_menu::Snapshot(act).paused);
-    kb_tap(13);
-    CHECK(!m_paused && dwg2::recomp_menu::IsOpen());
-    kb_tap(39);  // Pause -> Quit Game
+    kb_tap(37);  // Pause -> Quit Game (wrap left)
     CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kQuitGame);
-    kb_tap(39);  // Quit Game -> Restart (wrap right)
+    kb_tap(37);  // Quit Game -> Restart
     CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kRestart);
-    kb_tap(37);  // Restart -> Quit Game (wrap left)
-    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kQuitGame);
-    kb_tap(37);  // Quit Game -> Pause
+    kb_tap(37);  // Restart -> Pause
     CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kPause);
     kb_tap(40);  // Pause -> Fullscreen (row 2)
     CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kFullscreen);
-    kb_tap(38);  // Fullscreen -> Restart
-    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kRestart);
-    kb_tap(37);  // Restart -> Quit Game
+    kb_tap(38);  // Fullscreen -> Pause
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kPause);
+    kb_tap(37);  // Pause -> Quit Game
     kb_tap(38);  // Quit Game -> Check for Updates (bottom row)
     CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kCheckUpdates);
     kb_tap(13);
     CHECK(m_update_checks == 1 && dwg2::recomp_menu::Snapshot(act).toast == "Checking for updates...");
-    kb_tap(40);  // Check for Updates -> Restart (wrap down)
-    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kRestart);
-    kb_tap(40);  // Restart -> Fullscreen
+    kb_tap(40);  // Check for Updates -> Pause (wrap down)
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kPause);
+    kb_tap(40);  // Pause -> Fullscreen
     CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kFullscreen);
-    kb_tap(38);  // Fullscreen -> Restart
-    kb_tap(39);  // Restart -> Pause
-    kb_tap(38);  // Pause -> Check for Updates
+    kb_tap(38);  // Fullscreen -> Pause
+    kb_tap(39);  // Pause -> Restart
+    kb_tap(38);  // Restart -> Check for Updates
     CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kCheckUpdates);
-    kb_tap(40);  // Check for Updates -> Restart
-    kb_tap(38);  // Restart -> Check for Updates (wrap up)
+    kb_tap(40);  // Check for Updates -> Pause
+    kb_tap(38);  // Pause -> Check for Updates (wrap up)
     CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kCheckUpdates);
-    kb_tap(40);  // Back to Restart
+    kb_tap(40);  // Back to Pause
 
-    // Walk all 12 main rows (Restart, Fullscreen..CheckUpdates) and verify automatic main_scroll
+    // Walk all 12 main rows (Pause, Fullscreen..CheckUpdates) and verify automatic main_scroll
     // tracking plus top<->bottom wrap.
     CHECK(dwg2::recomp_menu::MaxMainScroll() > 0);
-    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kRestart);
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kPause);
     CHECK(dwg2::recomp_menu::Snapshot(act).main_scroll == 0);
     kb_tap(40);
     for (int i = dwg2::recomp_menu::kFullscreen; i < dwg2::recomp_menu::kMainItemCount; ++i) {
@@ -589,9 +591,9 @@ int main() {
       CHECK(row >= s_walk.main_scroll && row <= dwg2::recomp_menu::LastVisibleMainRow(s_walk.main_scroll));
       kb_tap(40);  // Down
     }
-    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kRestart);
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kPause);
     CHECK(dwg2::recomp_menu::Snapshot(act).main_scroll == 0);
-    kb_tap(38);  // Wrap Up Restart -> CheckUpdates
+    kb_tap(38);  // Wrap Up Pause -> CheckUpdates
     {
       const auto s_bot = dwg2::recomp_menu::Snapshot(act);
       CHECK(s_bot.focus == dwg2::recomp_menu::kCheckUpdates);
@@ -599,8 +601,8 @@ int main() {
       CHECK(dwg2::recomp_menu::LastVisibleMainRow(s_bot.main_scroll) ==
             dwg2::recomp_menu::kMainRowCount - 1);
     }
-    kb_tap(40);  // Wrap Down CheckUpdates -> Restart
-    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kRestart);
+    kb_tap(40);  // Wrap Down CheckUpdates -> Pause
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kPause);
     CHECK(dwg2::recomp_menu::Snapshot(act).main_scroll == 0);
 
     // Resolution, FOV, FPS, FPS Counter, VSync, Prompts actions.
@@ -623,13 +625,87 @@ int main() {
     kb_tap(40);  // VSync
     kb_tap(13);
     CHECK(m_vsync);
-    kb_tap(40);  // Turbo Mode
-    kb_tap(13);
-    CHECK(m_turbo && dwg2::recomp_menu::Snapshot(act).turbo);
-    kb_tap(37);  // Left -> Off
-    CHECK(!m_turbo);
+    kb_tap(40);  // Turbo Mode: keyboard, no-op repeat guard, gamepad, stick snapback & cross-source dedup
+    CHECK(!m_turbo && m_turbo_set_calls == 0);
+    kb_tap(13);  // false -> true
+    CHECK(m_turbo && dwg2::recomp_menu::Snapshot(act).turbo && m_turbo_set_calls == 1);
+    kb_tap(13);  // true -> false
+    CHECK(!m_turbo && !dwg2::recomp_menu::Snapshot(act).turbo && m_turbo_set_calls == 2);
     kb_tap(39);  // Right -> On
-    CHECK(m_turbo);
+    CHECK(m_turbo && m_turbo_set_calls == 3);
+    kb_tap(39);  // Right again -> no-op
+    CHECK(m_turbo && m_turbo_set_calls == 3);
+    kb_tap(37);  // Left -> Off
+    CHECK(!m_turbo && m_turbo_set_calls == 4);
+    kb_tap(37);  // Left again -> no-op
+    CHECK(!m_turbo && m_turbo_set_calls == 4);
+    {
+      auto gp_btn = [&](int btn) {
+        dwg2::input::Raw g{};
+        g.buttons[btn] = true;
+        dwg2::recomp_menu::HandleGamepad(g, 2, now, act);
+        now += 20;
+        dwg2::recomp_menu::HandleGamepad(dwg2::input::Raw{}, 2, now, act);
+        now += 20;
+      };
+      gp_btn(0);  // Gamepad A: false -> true
+      CHECK(m_turbo && m_turbo_set_calls == 5);
+      gp_btn(0);  // Gamepad A: true -> false
+      CHECK(!m_turbo && m_turbo_set_calls == 6);
+      gp_btn(14); // D-pad Right -> On
+      CHECK(m_turbo && m_turbo_set_calls == 7);
+      gp_btn(13); // D-pad Left -> Off
+      CHECK(!m_turbo && m_turbo_set_calls == 8);
+      gp_btn(14); // D-pad Right -> On for stick Left + snapback test
+      CHECK(m_turbo && m_turbo_set_calls == 9);
+      dwg2::input::Raw st{};
+      st.axes[0] = -0.9f;  // Flick Left Stick left -> Off
+      dwg2::recomp_menu::HandleGamepad(st, 2, now, act);
+      CHECK(!m_turbo && m_turbo_set_calls == 10);
+      now += 20;
+      dwg2::recomp_menu::HandleGamepad(dwg2::input::Raw{}, 2, now, act);  // Release
+      now += 80;
+      st.axes[0] = 0.8f;   // Snapback right within 150ms must NOT flip Turbo back On
+      dwg2::recomp_menu::HandleGamepad(st, 2, now, act);
+      CHECK(!m_turbo && m_turbo_set_calls == 10);
+      dwg2::recomp_menu::HandleGamepad(dwg2::input::Raw{}, 2, now + 10, act);
+      now += 200;
+      dwg2::recomp_menu::HandleGamepad(st, 2, now, act);  // Deliberate stick right after 200ms -> On
+      CHECK(m_turbo && m_turbo_set_calls == 11);
+      dwg2::recomp_menu::HandleGamepad(dwg2::input::Raw{}, 2, now + 10, act);
+      now += 100;
+      // Cross-source Enter + A within 20ms must toggle Turbo ONCE (true -> false).
+      {
+        dwg2::input::Raw kr{}, gr{};
+        kr.keys[13] = true;
+        gr.buttons[0] = true;
+        dwg2::recomp_menu::HandleKeyboard(kr, now, act);
+        dwg2::recomp_menu::HandleGamepad(gr, 2, now + 8, act);
+        dwg2::recomp_menu::HandleKeyboard(dwg2::input::Raw{}, now + 20, act);
+        dwg2::recomp_menu::HandleGamepad(dwg2::input::Raw{}, 2, now + 20, act);
+        now += 120;
+        CHECK(!m_turbo && m_turbo_set_calls == 12);
+      }
+      // Re-enable Turbo via Right for Button Prompts step next.
+      kb_tap(39);
+      CHECK(m_turbo && m_turbo_set_calls == 13);
+    }
+    {
+      const auto tmp_ini = std::filesystem::temp_directory_path() / L"dwg2_turbo_settings_test.ini";
+      std::error_code ec;
+      std::filesystem::remove(tmp_ini, ec);
+      {
+        std::ofstream out(tmp_ini, std::ios::binary | std::ios::trunc);
+        out << "[video]\nfps_counter = 0\nturbo = 1\n[prompts]\nstyle = 0\n";
+      }
+      for (int expected : {0, 1, 0}) {
+        CHECK(dwg2::settings::Update(tmp_ini, {{"video/turbo", std::to_string(expected)}}));
+        dwg2::settings::Document doc;
+        CHECK(dwg2::settings::Read(tmp_ini, doc));
+        CHECK(dwg2::settings::Integer(doc, "video", "turbo", -1, 0, 1) == expected);
+      }
+      std::filesystem::remove(tmp_ini, ec);
+    }
     kb_tap(40);  // Button Prompts
     for (int expected_style : {1, 4, 5, 7, 6, 2, 8, 3, 0}) {
       kb_tap(13);
@@ -679,8 +755,8 @@ int main() {
     dwg2::recomp_menu::SetOpen(false);
     dwg2::recomp_menu::SetOpen(true, false);
 
-    // Inline Quit Yes/No (default No): Up reaches Row 1 (Restart), Left wraps to Quit Game.
-    while (dwg2::recomp_menu::Snapshot(act).focus != dwg2::recomp_menu::kRestart) kb_tap(38);
+    // Inline Quit Yes/No (default No): Up reaches Row 1 (Pause), Left wraps to Quit Game.
+    while (dwg2::recomp_menu::Snapshot(act).focus != dwg2::recomp_menu::kPause) kb_tap(38);
     kb_tap(37);
     CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kQuitGame);
     kb_tap(13);  // Open ConfirmQuit
@@ -766,7 +842,7 @@ int main() {
             cfg_row <= dwg2::recomp_menu::LastVisibleMainRow(s_back.main_scroll));
     }
     // Reset to top scroll and verify mouse hits + wheel + scroll-arrow clicks + focus clamping.
-    while (dwg2::recomp_menu::Snapshot(act).focus != dwg2::recomp_menu::kRestart) kb_tap(38);
+    while (dwg2::recomp_menu::Snapshot(act).focus != dwg2::recomp_menu::kPause) kb_tap(38);
     CHECK(dwg2::recomp_menu::Snapshot(act).main_scroll == 0);
     dwg2::recomp_menu::UpdateHitRects({
         {100, 100, 300, 120, dwg2::recomp_menu::kHitFovSlider, 0},
@@ -776,7 +852,7 @@ int main() {
         {520, 100, 560, 120, dwg2::recomp_menu::kHitToggleOff, dwg2::recomp_menu::kFullscreen},
         {650, 100, 690, 120, dwg2::recomp_menu::kHitToggleOn, dwg2::recomp_menu::kTurbo},
         {700, 100, 740, 120, dwg2::recomp_menu::kHitToggleOff, dwg2::recomp_menu::kTurbo},
-        {580, 100, 640, 120, dwg2::recomp_menu::kHitMainRow, dwg2::recomp_menu::kRestart},
+        {580, 100, 640, 120, dwg2::recomp_menu::kHitMainRow, dwg2::recomp_menu::kPause},
     }, dwg2::recomp_menu::View::kMain, 0, 0);
     CHECK(dwg2::recomp_menu::HandleMouseDown(200.0f, 110.0f, act, now));
     CHECK(m_fov == 50);
@@ -814,9 +890,24 @@ int main() {
     CHECK(dwg2::recomp_menu::HandleMouseDown(480.0f, 110.0f, act, now) && m_full);
     CHECK(dwg2::recomp_menu::HandleMouseDown(480.0f, 110.0f, act, now) && m_full);
     CHECK(dwg2::recomp_menu::HandleMouseDown(540.0f, 110.0f, act, now) && !m_full);
-    CHECK(dwg2::recomp_menu::HandleMouseDown(670.0f, 110.0f, act, now) && m_turbo);
-    CHECK(dwg2::recomp_menu::HandleMouseDown(720.0f, 110.0f, act, now) && !m_turbo);
-    CHECK(dwg2::recomp_menu::HandleMouseDown(600.0f, 110.0f, act, now));
+    {
+      CHECK(m_turbo);
+      const int calls_before = m_turbo_set_calls;
+      CHECK(dwg2::recomp_menu::HandleMouseDown(670.0f, 110.0f, act, now) && m_turbo);
+      CHECK(m_turbo_set_calls == calls_before);  // Already On -> no-op
+      CHECK(dwg2::recomp_menu::HandleMouseDown(720.0f, 110.0f, act, now) && !m_turbo);
+      CHECK(dwg2::recomp_menu::HandleMouseDown(720.0f, 110.0f, act, now) && !m_turbo);
+      CHECK(m_turbo_set_calls == calls_before + 1);  // Second Off -> no-op
+      CHECK(dwg2::recomp_menu::HandleMouseDown(670.0f, 110.0f, act, now) && m_turbo);
+      CHECK(dwg2::recomp_menu::HandleMouseDown(720.0f, 110.0f, act, now) && !m_turbo);
+      CHECK(m_turbo_set_calls == calls_before + 3);
+    }
+    CHECK(dwg2::recomp_menu::HandleMouseDown(600.0f, 110.0f, act, now) && m_paused);
+    CHECK(dwg2::recomp_menu::HandleMouseDown(600.0f, 110.0f, act, now) && !m_paused);
+    // Re-select kRestart cleanly for Restart confirm modal test below.
+    kb_tap(39);
+    CHECK(dwg2::recomp_menu::Snapshot(act).focus == dwg2::recomp_menu::kRestart);
+    kb_tap(13);
     CHECK(!dwg2::recomp_menu::HandleMouseDown(420.0f, 110.0f, act, now)); // Stale main hit.
     // Wheel is ignored while a confirm modal is active.
     {
@@ -1075,6 +1166,20 @@ int main() {
                   ((snap.main_scroll > 0) ? 2u : 0u) +
                   ((LastVisibleMainRow(snap.main_scroll) < kMainRowCount - 1) ? 2u : 0u);
               CHECK(tri_count == expected_tris);
+              if (snap.main_scroll == 0) {
+                auto find_row = [&](int item) -> HitRect {
+                  for (const auto& h : hits) {
+                    if (h.id == kHitMainRow && h.sub == item) return h;
+                  }
+                  return {};
+                };
+                const auto p_hit = find_row(kPause);
+                const auto r_hit = find_row(kRestart);
+                const auto q_hit = find_row(kQuitGame);
+                CHECK(p_hit.id == kHitMainRow && r_hit.id == kHitMainRow &&
+                      q_hit.id == kHitMainRow);
+                CHECK(p_hit.x0 < r_hit.x0 && r_hit.x0 < q_hit.x0);
+              }
             }
             if (view == View::kConfirmRestart || view == View::kConfirmQuit ||
                 view == View::kConfirmLanguageRestart) {

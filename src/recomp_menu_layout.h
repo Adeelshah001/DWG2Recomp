@@ -229,9 +229,9 @@ void DrawMenuLayout(const MenuSnapshot& snap, float width, std::string_view fps_
     switch (r) {
       case 0: {
         const auto actions = next_row(h, gap);
-        chip(actions.Column(0, 3, 8), t.restart, kHitMainRow, kRestart, false, focused(kRestart));
-        chip(actions.Column(1, 3, 8), snap.paused ? t.resume : t.pause,
+        chip(actions.Column(0, 3, 8), snap.paused ? t.resume : t.pause,
              kHitMainRow, kPause, false, focused(kPause));
+        chip(actions.Column(1, 3, 8), t.restart, kHitMainRow, kRestart, false, focused(kRestart));
         chip(actions.Column(2, 3, 8), t.quit_game, kHitMainRow, kQuitGame, false,
              focused(kQuitGame));
         break;

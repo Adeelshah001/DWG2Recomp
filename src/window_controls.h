@@ -166,6 +166,7 @@ inline bool ApplyTurbo(HWND hwnd,rex::ui::WindowSDL* owner,bool enabled,bool sho
     REXLOG_INFO("DWG2 turbo set: {}",enabled);
     return true;
   }
+  REXLOG_WARN("DWG2 turbo save failed (requested={})", enabled);
   if(show_error)MessageBoxW(hwnd,L"The Turbo Mode setting could not be saved. The previous value is retained.",L"Turbo Mode",MB_ICONERROR);
   Sync(owner);
   return false;

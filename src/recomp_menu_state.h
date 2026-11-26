@@ -23,8 +23,8 @@ namespace dwg2::recomp_menu {
 enum class View { kMain, kConfirmQuit, kConfirmRestart, kConfirmLanguageRestart, kControlsWizard };
 
 enum MainItem : int {
-  kRestart = 0,
-  kPause,
+  kPause = 0,
+  kRestart,
   kQuitGame,
   kFullscreen,
   kResolution,
@@ -111,7 +111,7 @@ constexpr int FocusToMainRow(int focus) {
 
 constexpr int MainRowToFocus(int row) {
   const int r = std::clamp(row, 0, kMainRowCount - 1);
-  return (r == 0) ? kRestart : (kQuitGame + r);
+  return (r == 0) ? kPause : (kQuitGame + r);
 }
 
 constexpr int LastVisibleMainRow(int scroll) {
@@ -143,6 +143,8 @@ inline constexpr int kWizBack = dwg2::input::Count + 3;
 inline constexpr int kWizItemCount = dwg2::input::Count + 4;
 inline constexpr uint64_t kRepeatDelayMs = 320;
 inline constexpr uint64_t kRepeatRateMs = 95;
+inline constexpr uint64_t kStickSnapbackMs = 150;
+inline constexpr uint64_t kCrossSourceConfirmDebounceMs = 80;
 inline constexpr uint64_t kToastDurationMs = 3000;
 
 struct HitRect {
@@ -225,6 +227,8 @@ namespace detail {
 struct RepeatState {
   int dir = 0;
   uint64_t next_ms = 0;
+  int last_stick_dir = 0;
+  uint64_t stick_release_ms = 0;
   int Step(int cur_dir, uint64_t now_ms) {
     if (cur_dir == 0) {
       dir = 0;
@@ -242,16 +246,36 @@ struct RepeatState {
     }
     return 0;
   }
+  int StepGamepad(int dpad_dir, int stick_dir, uint64_t now_ms) {
+    if (dpad_dir != 0) {
+      last_stick_dir = 0;
+      stick_release_ms = 0;
+      return Step(dpad_dir, now_ms);
+    }
+    if (stick_dir != 0) {
+      if (last_stick_dir != 0 && stick_dir == -last_stick_dir &&
+          now_ms < stick_release_ms + kStickSnapbackMs) {
+        return Step(0, now_ms);
+      }
+      last_stick_dir = stick_dir;
+      stick_release_ms = 0;
+      return Step(stick_dir, now_ms);
+    }
+    if (dir != 0 && last_stick_dir == dir) stick_release_ms = now_ms;
+    return Step(0, now_ms);
+  }
   void Reset() {
     dir = 0;
     next_ms = 0;
+    last_stick_dir = 0;
+    stick_release_ms = 0;
   }
 };
 
 struct State {
   std::mutex mutex;
   View view = View::kMain;
-  int focus = kRestart;
+  int focus = kPause;
   int main_scroll = 0;
   bool confirm_quit_yes = false;
   int active_language = kLangEnglish;
@@ -285,6 +309,8 @@ struct State {
   bool prev_gp_close = false, gp_close_wait_release = false;
   bool prev_enter = false, prev_esc = false, prev_back = false, prev_del = false;
   bool prev_kb_close = false, kb_close_wait_release = false;
+  int last_confirm_source = 0;
+  uint64_t last_confirm_ms = 0;
 };
 
 inline State& GetState() {
@@ -338,7 +364,7 @@ inline void SetOpenLocked(State& s, bool value, bool wait_close_release) {
   if (value && !was) {
     s.hit_rects.clear();
     s.view = View::kMain;
-    s.focus = kRestart;
+    s.focus = kPause;
     s.main_scroll = 0;
     s.hit_main_scroll = 0;
     s.confirm_quit_yes = false;
@@ -358,6 +384,8 @@ inline void SetOpenLocked(State& s, bool value, bool wait_close_release) {
     s.prev_gp_close = s.prev_kb_close = false;
     s.gp_close_wait_release = wait_close_release;
     s.kb_close_wait_release = wait_close_release;
+    s.last_confirm_source = 0;
+    s.last_confirm_ms = 0;
   } else if (!value) {
     s.pending_language_dirty = false;
     s.pending_language = s.active_language;
@@ -368,6 +396,8 @@ inline void SetOpenLocked(State& s, bool value, bool wait_close_release) {
     s.kb_close_wait_release = false;
     s.prev_gp_close = false;
     s.prev_kb_close = false;
+    s.last_confirm_source = 0;
+    s.last_confirm_ms = 0;
     s.hit_rects.clear();
   }
 }
@@ -575,8 +605,11 @@ inline Command BuildMainActivateLocked(State& s, int item, const Actions& act, i
 inline Command BuildMainHorizLocked(State& s, int item, int dir, const Actions& act) {
   static constexpr int kFpsOpts[3] = {60, 120, 0};
   switch (item) {
-    case kFullscreen:
-      return {PendingOp::kSetFullscreen, dir > 0, 0};
+    case kFullscreen: {
+      const bool next = dir > 0;
+      const bool cur = act.is_fullscreen && act.is_fullscreen();
+      return next != cur ? Command{PendingOp::kSetFullscreen, next, 0} : Command{};
+    }
     case kResolution: {
       int cur = act.resolution ? act.resolution() : 1;
       if (cur == 15) cur = (dir < 0) ? 2 : 1;
@@ -594,12 +627,21 @@ inline Command BuildMainHorizLocked(State& s, int item, int dir, const Actions& 
       int next = StepChoice(kFpsOpts, 3, cur, dir, false);
       return next != cur ? Command{PendingOp::kSetFps, false, next} : Command{};
     }
-    case kFpsCounter:
-      return {PendingOp::kSetFpsCounter, dir > 0, 0};
-    case kVsync:
-      return {PendingOp::kSetVsync, dir > 0, 0};
-    case kTurbo:
-      return {PendingOp::kSetTurbo, dir > 0, 0};
+    case kFpsCounter: {
+      const bool next = dir > 0;
+      const bool cur = act.fps_counter && act.fps_counter();
+      return next != cur ? Command{PendingOp::kSetFpsCounter, next, 0} : Command{};
+    }
+    case kVsync: {
+      const bool next = dir > 0;
+      const bool cur = act.vsync && act.vsync();
+      return next != cur ? Command{PendingOp::kSetVsync, next, 0} : Command{};
+    }
+    case kTurbo: {
+      const bool next = dir > 0;
+      const bool cur = act.turbo && act.turbo();
+      return next != cur ? Command{PendingOp::kSetTurbo, next, 0} : Command{};
+    }
     case kButtonPrompts: {
       int cur = act.prompt_choice ? act.prompt_choice() : 0;
       int next = StepChoice(dwg2::prompts::kMenuOrder, 9, cur, dir, true);
@@ -628,9 +670,9 @@ inline Command NavigateLocked(State& s, int v_step, int h_step, bool confirm, bo
       if (s.focus <= kQuitGame) {
         s.focus = (v_step > 0) ? kFullscreen : (kMainItemCount - 1);
       } else if (v_step < 0 && s.focus == kFullscreen) {
-        s.focus = kRestart;
+        s.focus = kPause;
       } else if (v_step > 0 && s.focus == kMainItemCount - 1) {
-        s.focus = kRestart;
+        s.focus = kPause;
       } else {
         s.focus += v_step;
       }
@@ -638,7 +680,7 @@ inline Command NavigateLocked(State& s, int v_step, int h_step, bool confirm, bo
     }
     if (h_step != 0) {
       if (s.focus <= kQuitGame) {
-        s.focus = kRestart + ((s.focus - kRestart + h_step + 3) % 3);
+        s.focus = kPause + ((s.focus - kPause + h_step + 3) % 3);
         EnsureMainScrollLocked(s);
         return {};
       }
@@ -939,16 +981,14 @@ inline void HandleGamepad(const dwg2::input::Raw& raw, int family, uint64_t now_
       }
     }
 
-    const int raw_v = (raw.buttons[12] || raw.axes[1] > 0.55f)
-                          ? 1
-                          : ((raw.buttons[11] || raw.axes[1] < -0.55f) ? -1 : 0);
-    const int raw_h = (raw.buttons[14] || raw.axes[0] > 0.55f)
-                          ? 1
-                          : ((raw.buttons[13] || raw.axes[0] < -0.55f) ? -1 : 0);
-    const int v_step = s.gp_v.Step(raw_v, now_ms);
-    const int h_step = s.gp_h.Step(raw_h, now_ms);
+    const int dpad_v = raw.buttons[12] ? 1 : (raw.buttons[11] ? -1 : 0);
+    const int stick_v = (raw.axes[1] > 0.55f) ? 1 : ((raw.axes[1] < -0.55f) ? -1 : 0);
+    const int dpad_h = raw.buttons[14] ? 1 : (raw.buttons[13] ? -1 : 0);
+    const int stick_h = (raw.axes[0] > 0.55f) ? 1 : ((raw.axes[0] < -0.55f) ? -1 : 0);
+    const int v_step = s.gp_v.StepGamepad(dpad_v, stick_v, now_ms);
+    const int h_step = s.gp_h.StepGamepad(dpad_h, stick_h, now_ms);
 
-    const bool a_edge = raw.buttons[0] && !s.prev_a;
+    bool a_edge = raw.buttons[0] && !s.prev_a;
     const bool b_edge = raw.buttons[1] && !s.prev_b;
     const bool x_edge = raw.buttons[2] && !s.prev_x;
     const bool lb_edge = raw.buttons[9] && !s.prev_lb;
@@ -958,6 +998,15 @@ inline void HandleGamepad(const dwg2::input::Raw& raw, int family, uint64_t now_
     s.prev_x = raw.buttons[2];
     s.prev_lb = raw.buttons[9];
     s.prev_rb = raw.buttons[10];
+    if (a_edge) {
+      if (s.last_confirm_source == 1 && now_ms >= s.last_confirm_ms &&
+          (now_ms - s.last_confirm_ms) < kCrossSourceConfirmDebounceMs) {
+        a_edge = false;
+      } else {
+        s.last_confirm_source = 2;
+        s.last_confirm_ms = now_ms;
+      }
+    }
 
     const int prof_step = (rb_edge ? 1 : 0) - (lb_edge ? 1 : 0);
     cmd = detail::NavigateLocked(s, v_step, h_step, a_edge, b_edge, x_edge, prof_step, act, now_ms,
@@ -1055,7 +1104,7 @@ inline void HandleKeyboard(const dwg2::input::Raw& raw, uint64_t now_ms, const A
     const bool back_down = raw.keys[8];
     const bool del_down = raw.keys[46];
 
-    const bool enter_edge = enter_down && !s.prev_enter;
+    bool enter_edge = enter_down && !s.prev_enter;
     const bool esc_edge = esc_down && !s.prev_esc;
     const bool back_edge = back_down && !s.prev_back;
     const bool del_edge = del_down && !s.prev_del;
@@ -1064,6 +1113,15 @@ inline void HandleKeyboard(const dwg2::input::Raw& raw, uint64_t now_ms, const A
     s.prev_esc = esc_down;
     s.prev_back = back_down;
     s.prev_del = del_down;
+    if (enter_edge) {
+      if (s.last_confirm_source == 2 && now_ms >= s.last_confirm_ms &&
+          (now_ms - s.last_confirm_ms) < kCrossSourceConfirmDebounceMs) {
+        enter_edge = false;
+      } else {
+        s.last_confirm_source = 1;
+        s.last_confirm_ms = now_ms;
+      }
+    }
 
     const bool go_back = esc_edge || (s.view != View::kControlsWizard && back_edge);
     const bool clear_wiz = (s.view == View::kControlsWizard) && (del_edge || back_edge);
