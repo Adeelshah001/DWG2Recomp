@@ -1,6 +1,6 @@
 --- a/include/rex/graphics/pipeline/render_target/cache.h
 +++ b/include/rex/graphics/pipeline/render_target/cache.h
-@@ -487,6 +487,38 @@
+@@ -487,6 +487,42 @@
    // false).
    virtual bool IsHostDepthEncodingDifferent(xenos::DepthRenderTargetFormat format) const = 0;
  
@@ -34,7 +34,11 @@
 +    }
 +    return true;
 +  }
-+  void Dwg2CommitSceneOwnership(const RenderTargetCache& old) {ownership_ranges_=old.ownership_ranges_;}
++  void Dwg2CommitSceneOwnership(const RenderTargetCache& old) {
++    if (GetPath() == Path::kHostRenderTargets && old.GetPath() == Path::kHostRenderTargets) {
++      ownership_ranges_ = old.ownership_ranges_;
++    }
++  }
 +
    void ResetAccumulatedRenderTargets() { are_accumulated_render_targets_valid_ = false; }
    RenderTarget* const* last_update_accumulated_render_targets() const {

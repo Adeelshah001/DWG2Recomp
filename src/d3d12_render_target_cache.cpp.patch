@@ -179,11 +179,14 @@
                // Load from the host depth texture.
                if (key.host_depth_source_msaa_samples != xenos::MsaaSamples::k1X) {
                  a.OpLdMS(dxbc::Dest::R(0, 0b0001), dxbc::Src::R(0), 0b0011,
-@@ -3793,11 +3864,34 @@
+@@ -3793,11 +3864,37 @@
    return pipelines;
  }
  
 +bool D3D12RenderTargetCache::Dwg2MigrateSceneFrom(const D3D12RenderTargetCache& old) {
++  if (GetPath() == Path::kPixelShaderInterlock && old.GetPath() == Path::kPixelShaderInterlock) {
++    return dwg2_scene_denominator_ == 1;
++  }
 +  // Hardware sample layouts must agree; no reinterpretation of 2x as 4x.
 +  if(msaa_2x_supported_!=old.msaa_2x_supported_)return false;
 +  std::vector<Dwg2SceneCopy> copies;
@@ -214,7 +217,7 @@
    assert_true(GetPath() == Path::kHostRenderTargets);
  
    const ui::d3d12::D3D12Provider& provider = command_processor_.GetD3D12Provider();
-@@ -3810,14 +3904,12 @@
+@@ -3810,14 +3907,12 @@
    if (resolve_clear_needed) {
      // Assuming the rectangle is already clamped by the setup function from the
      // common render target cache.
@@ -233,7 +236,7 @@
    }
  
    // Do host depth storing for the depth destination (assuming there can be only
-@@ -4061,7 +4153,7 @@
+@@ -4061,7 +4156,7 @@
    current_temporary_descriptors_gpu_.resize(descriptor_count);
    if (!command_processor_.RequestOneUseSingleViewDescriptors(
            descriptor_count, current_temporary_descriptors_gpu_.data())) {
@@ -242,7 +245,7 @@
    }
    for (uint32_t i = 0; i < descriptor_count; ++i) {
      device->CopyDescriptorsSimple(1, current_temporary_descriptors_gpu_[i].first,
-@@ -4073,8 +4165,8 @@
+@@ -4073,8 +4168,8 @@
  
    bool transfer_viewport_set = false;
    float pixels_to_ndc_unscaled = 2.0f / float(D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION);
@@ -253,7 +256,7 @@
  
    TransferRootSignatureIndex last_transfer_root_signature_index =
        TransferRootSignatureIndex::kCount;
-@@ -4169,6 +4261,9 @@
+@@ -4169,6 +4264,9 @@
            RenderTargetKey source_rt_key = source_d3d12_rt.key();
            new_transfer_shader_key.source_msaa_samples = source_rt_key.msaa_samples;
            new_transfer_shader_key.source_resource_format = source_rt_key.resource_format;
@@ -263,7 +266,7 @@
            bool host_depth_source_is_copy = host_depth_source_d3d12_rt == &dest_d3d12_rt;
            new_transfer_shader_key.host_depth_source_is_copy = host_depth_source_is_copy;
            // The host depth copy buffer has only raw samples.
-@@ -4225,15 +4320,13 @@
+@@ -4225,15 +4323,13 @@
              const Transfer::Rectangle& stencil_clear_rectangle =
                  transfer_stencil_clear_rectangles[j];
              stencil_clear_rect_write_ptr->left =
@@ -283,7 +286,7 @@
              ++stencil_clear_rect_write_ptr;
            }
          }
-@@ -4331,7 +4424,7 @@
+@@ -4331,7 +4427,7 @@
                  current_submission, transfer_rectangle_buffer_view.SizeInBytes, sizeof(float),
                  nullptr, nullptr, &transfer_rectangle_buffer_view.BufferLocation));
          if (!transfer_rectangle_write_ptr) {
@@ -292,7 +295,7 @@
          }
          for (auto it_merged = it_merged_first; it_merged <= it_merged_last; ++it_merged) {
            Transfer::Rectangle transfer_invocation_rectangles[Transfer::kMaxRectanglesWithCutout];
-@@ -4385,7 +4478,7 @@
+@@ -4385,7 +4481,7 @@
          ID3D12PipelineState* const* transfer_pipelines =
              GetOrCreateTransferPipelines(transfer_shader_key);
          if (!transfer_pipelines) {
@@ -301,7 +304,7 @@
          }
          if (last_transfer_root_signature_index != transfer_root_signature_index) {
            last_transfer_root_signature_index = transfer_root_signature_index;
-@@ -5284,6 +5377,7 @@
+@@ -5284,6 +5380,7 @@
        // r0.w = sample index within the source pixel
        a.OpUShR(dxbc::Dest::R(0, 0b0010), dxbc::Src::R(0, dxbc::Src::kYYYY), dxbc::Src::LU(1));
      }
@@ -309,7 +312,7 @@
      // Load the source to r1.
      // r0.x = X pixel position within the source texture if stencil is needed
      // r0.y = Y pixel position within the source texture if stencil is needed
-@@ -5311,6 +5405,7 @@
+@@ -5311,6 +5408,7 @@
      // r0.z = sample offset in the EDRAM
      // r0.w = LOD for the texture load (zero)
      a.OpMov(dxbc::Dest::R(0, 0b1000), dxbc::Src::LF(0.0f));
