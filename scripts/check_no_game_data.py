@@ -36,6 +36,7 @@ ALLOWED_BINARY = frozenset({
     'assets/features/fov.gif',
     'assets/features/graphics-options.png',
     'assets/features/quit-game.png',
+    'kofi-banner.png',
 })
 
 def is_forbidden_file(path: Path) -> str | None:
