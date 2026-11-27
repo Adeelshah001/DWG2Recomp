@@ -105,24 +105,59 @@ extern "C" void sub_82223710(PPCContext& ctx,uint8_t* base) {
 }
 
 #include "fov_effects.h"
+static bool Dwg2TryScaleFov(uint32_t data,uint32_t caller,dwg2::camera::FovCallKind kind,float input,float& output,const char* stage,unsigned phase,uint8_t* base) {
+ if(!data||uint64_t(data)+336>0x100000000ULL)return false;
+ const int boost=Dwg2FovPercent();bool apply=false;
+ {std::fenv_t saved;std::fegetenv(&saved);
+  auto read=[&](uint32_t o){return std::bit_cast<float>(REX_LOAD_U32(data+o));};
+  dwg2::camera::ProjectionSample sample{read(312),read(316),read(176),read(196),REX_LOAD_U32(data+328)};
+  apply=dwg2::camera::ScaleFovInput(sample,boost,caller,kind,input,output);
+  std::fesetenv(&saved);
+ }
+ if(apply&&REXCVAR_GET(dwg2_diag_trace))Dwg2VisibilityTrace(stage,phase,data,0,base);
+ return apply;
+}
 extern "C" void __imp__sub_821244B8(PPCContext&,uint8_t*);
 extern "C" void sub_821244B8(PPCContext& ctx,uint8_t* base) {
- // This exact call constructs the effects frustum from camera payload+312.
- // Other vector trigonometry callers retain their original input.
- if(uint32_t(ctx.lr)==0x8240F378) {
-  const uint32_t data=ctx.r30.u32;
-  if(data&&uint64_t(data)+336<=0x100000000ULL) {
-   const int boost=Dwg2FovPercent();float adjusted=0;bool apply=false;
-   {std::fenv_t saved;std::fegetenv(&saved);
-    auto read=[&](uint32_t o){return std::bit_cast<float>(REX_LOAD_U32(data+o));};
-    dwg2::camera::ProjectionSample sample{read(312),read(316),read(176),read(196),REX_LOAD_U32(data+328)};
-    apply=dwg2::camera::EffectsHalfAngle(sample,boost,uint32_t(ctx.lr),ctx.v1.f32[3],adjusted);
-    std::fesetenv(&saved);
-   }
-   if(apply){if (REXCVAR_GET(dwg2_diag_trace)) Dwg2VisibilityTrace("effects_frustum_corrected",3,data,0,base);ctx.v1.f32[3]=adjusted;}
-  }
+ // Scale verified camera-frustum callers reading payload+312 / camera+328.
+ const uint32_t caller=uint32_t(ctx.lr);
+ uint32_t data=0;
+ switch(caller) {
+  case 0x8240F378u: data=ctx.r30.u32; break;
+  case 0x8240FBA8u: data=ctx.r1.u32?ctx.r1.u32+352u:0u; break;
+  case 0x82410828u: case 0x824123F8u: case 0x8241216Cu: data=ctx.r29.u32; break;
+  case 0x824109D0u: case 0x82410B2Cu: data=ctx.r1.u32?ctx.r1.u32+112u:0u; break;
+  case 0x82412360u: case 0x82412630u: data=ctx.r1.u32?ctx.r1.u32+176u:0u; break;
+  case 0x82125E70u: data=ctx.r30.u32?ctx.r30.u32+16u:0u; break;
  }
+ float adjusted=0;
+ if(data&&Dwg2TryScaleFov(data,caller,dwg2::camera::FovCallKind::TrigHalfAngle,ctx.v1.f32[3],adjusted,
+     caller==0x82125E70u?"culling_frustum_corrected":"effects_frustum_corrected",3,base))
+  ctx.v1.f32[3]=adjusted;
  __imp__sub_821244B8(ctx,base);
+}
+extern "C" void __imp__sub_82548738(PPCContext&,uint8_t*);
+extern "C" void sub_82548738(PPCContext& ctx,uint8_t* base) {
+ const uint32_t caller=uint32_t(ctx.lr);
+ uint32_t data=0;
+ switch(caller) {
+  case 0x823ED064u: data=ctx.r31.u32?ctx.r31.u32+16u:0u; break;
+  case 0x823A4A18u: data=ctx.r31.u32; break;
+  case 0x823C90CCu: data=ctx.r30.u32; break;
+ }
+ float adjusted=0;
+ if(data&&Dwg2TryScaleFov(data,caller,dwg2::camera::FovCallKind::TanHalfAngle,float(ctx.f1.f64),adjusted,"vfx_frustum_corrected",4,base))
+  ctx.f1.f64=double(adjusted);
+ __imp__sub_82548738(ctx,base);
+}
+extern "C" void __imp__sub_823A44E8(PPCContext&,uint8_t*);
+extern "C" void sub_823A44E8(PPCContext& ctx,uint8_t* base) {
+ const uint32_t caller=uint32_t(ctx.lr);
+ const uint32_t data=(caller==0x823A47F4u)?ctx.r31.u32:0u;
+ float adjusted=0;
+ if(data&&Dwg2TryScaleFov(data,caller,dwg2::camera::FovCallKind::FullAngle,float(ctx.f1.f64),adjusted,"culling_tan_corrected",5,base))
+  ctx.f1.f64=double(adjusted);
+ __imp__sub_823A44E8(ctx,base);
 }
 
 #ifndef REX_LOAD_U8
@@ -261,7 +296,9 @@ class Dwg2App : public rex::ReXApp {
     if(dispatcher->GetFunction(0x8211A220)!=&sub_8211A220||
        dispatcher->GetFunction(0x823862B8)!=&sub_823862B8)
       throw std::runtime_error("DWG2 camera refresh hooks do not match this game build");
-    if(dispatcher->GetFunction(0x821244B8)!=&sub_821244B8)
+    if(dispatcher->GetFunction(0x821244B8)!=&sub_821244B8||
+       dispatcher->GetFunction(0x82548738)!=&sub_82548738||
+       dispatcher->GetFunction(0x823A44E8)!=&sub_823A44E8)
       throw std::runtime_error("DWG2 effects frustum hook does not match this build");
     if(dispatcher->GetFunction(0x82225750)!=&sub_82225750||dispatcher->GetFunction(0x8222ADB8)!=&sub_8222ADB8||dispatcher->GetFunction(0x82223710)!=&sub_82223710)
       throw std::runtime_error("DWG2 FOV visibility diagnostics do not match this build");

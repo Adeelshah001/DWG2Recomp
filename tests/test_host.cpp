@@ -4,6 +4,7 @@
 #include "automatic_save.h"
 #include "camera_control.h"
 #include "camera_refresh.h"
+#include "fov_effects.h"
 #include "game_ui_assets.h"
 #include "input_config.h"
 #include "keyboard_art.h"
@@ -97,6 +98,66 @@ int main() {
   CHECK(dwg2::camera::ValidPercent(100));
   CHECK(!dwg2::camera::ValidPercent(105));
   CHECK(!dwg2::camera::ValidPercent(52));
+
+  // FOV caller classification & scaling checks across Default/50%/100% (including projX < 1.0).
+  {
+    auto make_sample = [](float orig, int boost) {
+      const double adj = dwg2::camera::AdjustedAngle(orig, boost);
+      const float y = float(1.0 / std::tan(adj * 0.5));
+      const float x = y / (16.0f / 9.0f);
+      return dwg2::camera::ProjectionSample{orig, 16.0f / 9.0f, x, y, 0u};
+    };
+    const std::array<uint32_t, 10> trig_callers = {
+      0x8240F378u, 0x8240FBA8u, 0x82410828u, 0x824123F8u, 0x8241216Cu,
+      0x824109D0u, 0x82410B2Cu, 0x82412360u, 0x82412630u, 0x82125E70u,
+    };
+    const std::array<uint32_t, 3> tan_callers = {0x823ED064u, 0x823A4A18u, 0x823C90CCu};
+    constexpr float kOrig30 = 0.5235988f;
+    CHECK(make_sample(kOrig30, 100).x < 1.0f);
+    for (uint32_t c : trig_callers) CHECK(dwg2::camera::ClassifyFovCaller(c) == dwg2::camera::FovCallKind::TrigHalfAngle);
+    for (uint32_t c : tan_callers) CHECK(dwg2::camera::ClassifyFovCaller(c) == dwg2::camera::FovCallKind::TanHalfAngle);
+    CHECK(dwg2::camera::ClassifyFovCaller(0x823A47F4u) == dwg2::camera::FovCallKind::FullAngle);
+    CHECK(dwg2::camera::ClassifyFovCaller(0x82000000u) == dwg2::camera::FovCallKind::None);
+
+    for (int boost : {50, 100}) {
+      const auto s = make_sample(kOrig30, boost);
+      const float exp_half = float(dwg2::camera::AdjustedAngle(kOrig30, boost) * 0.5);
+      const float exp_full = float(dwg2::camera::AdjustedAngle(kOrig30, boost));
+      float out = 0.0f;
+      for (uint32_t c : trig_callers) {
+        out = 0.0f;
+        CHECK(dwg2::camera::ScaleFovInput(s, boost, c, dwg2::camera::FovCallKind::TrigHalfAngle, kOrig30 * 0.5f, out));
+        CHECK(out == exp_half);
+        out = 0.0f;
+        CHECK(dwg2::camera::EffectsHalfAngle(s, boost, c, kOrig30 * 0.5f, out) && out == exp_half);
+      }
+      for (uint32_t c : tan_callers) {
+        out = 0.0f;
+        CHECK(dwg2::camera::ScaleFovInput(s, boost, c, dwg2::camera::FovCallKind::TanHalfAngle, kOrig30 * 0.5f, out));
+        CHECK(out == exp_half);
+        CHECK(!dwg2::camera::EffectsHalfAngle(s, boost, c, kOrig30 * 0.5f, out));
+      }
+      out = 0.0f;
+      CHECK(dwg2::camera::ScaleFovInput(s, boost, 0x823A47F4u, dwg2::camera::FovCallKind::FullAngle, kOrig30, out));
+      CHECK(out == exp_full);
+      CHECK(!dwg2::camera::EffectsHalfAngle(s, boost, 0x823A47F4u, kOrig30, out));
+    }
+
+    const auto s0 = make_sample(kOrig30, 0);
+    const auto s100 = make_sample(kOrig30, 100);
+    auto s_ortho = s100; s_ortho.mode = 1u;
+    float out = 0.0f;
+    CHECK(!dwg2::camera::ScaleFovInput(s0, 0, 0x8240F378u, dwg2::camera::FovCallKind::TrigHalfAngle, kOrig30 * 0.5f, out));
+    CHECK(!dwg2::camera::ScaleFovInput(s100, 100, 0x82111111u, dwg2::camera::FovCallKind::TrigHalfAngle, kOrig30 * 0.5f, out));
+    CHECK(!dwg2::camera::ScaleFovInput(s100, 100, 0x8240F378u, dwg2::camera::FovCallKind::TanHalfAngle, kOrig30 * 0.5f, out));
+    CHECK(!dwg2::camera::ScaleFovInput(s100, 100, 0x823ED064u, dwg2::camera::FovCallKind::TrigHalfAngle, kOrig30 * 0.5f, out));
+    CHECK(!dwg2::camera::ScaleFovInput(s100, 100, 0x823A47F4u, dwg2::camera::FovCallKind::TanHalfAngle, kOrig30, out));
+    CHECK(!dwg2::camera::ScaleFovInput(s_ortho, 100, 0x823ED064u, dwg2::camera::FovCallKind::TanHalfAngle, kOrig30 * 0.5f, out));
+    CHECK(!dwg2::camera::ScaleFovInput(s0, 100, 0x823ED064u, dwg2::camera::FovCallKind::TanHalfAngle, kOrig30 * 0.5f, out));
+    CHECK(!dwg2::camera::ScaleFovInput(s100, 100, 0x823ED064u, dwg2::camera::FovCallKind::TanHalfAngle, kOrig30 * 0.5f + 0.01f, out));
+    CHECK(!dwg2::camera::ScaleFovInput(s100, 100, 0x823ED064u, dwg2::camera::FovCallKind::TanHalfAngle, std::numeric_limits<float>::quiet_NaN(), out));
+    CHECK(!dwg2::camera::ScaleFovInput(s100, 100, 0x823ED064u, dwg2::camera::FovCallKind::TanHalfAngle, std::numeric_limits<float>::infinity(), out));
+  }
 
   // Startup load / automatic save snapshot gate checks.
   dwg2::startup::LoadSnapshot ls{};
