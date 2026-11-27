@@ -9,16 +9,21 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
     name: Validate repository
     runs-on: windows-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -32,9 +37,46 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File scripts/build-launcher.ps1 -Output .\DWG2R.exe
         shell: pwsh
 
-      - name: Verify launcher runs (headless Ready check)
+      - name: Verify launcher CLI checks
+        timeout-minutes: 2
         run: |
-          .\DWG2R.exe --help 2>&1 | Select-String -Pattern "DWG2R|Usage|Help" -Quiet
+          $ErrorActionPreference = 'Stop'
+          function Invoke-LauncherCheck {
+            param(
+              [string]$Arguments,
+              [int]$ExpectedExit,
+              [string]$StdoutPattern,
+              [string]$StderrPattern
+            )
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = (Resolve-Path '.\DWG2R.exe').Path
+            $psi.Arguments = $Arguments
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $p = [System.Diagnostics.Process]::Start($psi)
+            $outTask = $p.StandardOutput.ReadToEndAsync()
+            $errTask = $p.StandardError.ReadToEndAsync()
+            if (-not $p.WaitForExit(15000)) {
+              try { $p.Kill() } catch {}
+              throw "Timed out running DWG2R.exe $Arguments"
+            }
+            $stdout = $outTask.GetAwaiter().GetResult().Trim()
+            $stderr = $errTask.GetAwaiter().GetResult().Trim()
+            if ($p.ExitCode -ne $ExpectedExit) {
+              throw "DWG2R.exe $Arguments exited $($p.ExitCode), expected $ExpectedExit. stdout='$stdout' stderr='$stderr'"
+            }
+            if ($StdoutPattern -and ($stdout -notmatch $StdoutPattern)) {
+              throw "DWG2R.exe $Arguments stdout mismatch: '$stdout'"
+            }
+            if ($StderrPattern -and ($stderr -notmatch $StderrPattern)) {
+              throw "DWG2R.exe $Arguments stderr mismatch: '$stderr'"
+            }
+          }
+          Invoke-LauncherCheck '--version' 0 '^\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$' ''
+          Invoke-LauncherCheck '--help' 0 '(?s)DWG2R.*Usage:' ''
+          Invoke-LauncherCheck '--invalid-option' 1 '' 'Unknown option'
         shell: pwsh
 
   # Optional: build the host layer to verify config/compiler.json is sound
@@ -44,6 +86,6 @@ jobs:
   #   runs-on: windows-latest
   #   if: false
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v7
   #     - name: Build libdwg2-host.a
   #       run: python scripts/build-host-library.py --toolchain ... --sdk-source ... --sdk-build ... --output libdwg2-host.a

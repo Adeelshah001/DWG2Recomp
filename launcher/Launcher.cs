@@ -170,17 +170,19 @@ internal static class Launcher {
     }
     [STAThread] private static int Main(string[] args) {
         Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
-        bool dry=false, validate=false, noLaunch=false, showVersion=false; string import=null;
+        bool dry=false, validate=false, noLaunch=false, showVersion=false, showHelp=false; string import=null;
         try {
             for(int i=0;i<args.Length;i++) {
                 if(args[i]=="--dry-run") dry=true;
                 else if(args[i]=="--validate") validate=true;
                 else if(args[i]=="--no-launch") noLaunch=true;
                 else if(args[i]=="--version") showVersion=true;
+                else if(args[i]=="--help" || args[i]=="-h") showHelp=true;
                 else if(args[i]=="--import" && i+1<args.Length) import=args[++i];
                 else throw new ArgumentException("Unknown option: "+args[i]);
             }
             if(showVersion) { Console.WriteLine(ResolvedVersion); return 0; }
+            if(showHelp) { Console.WriteLine("DWG2R "+ResolvedVersion+"\nUsage: DWG2R.exe [--version] [--help] [--dry-run] [--validate] [--no-launch] [--import <path>]"); return 0; }
             if(dry) { File.WriteAllText(Path.Combine(Root,"launch-preview.txt"),Arguments()); return 0; }
             bool created;
             using(var mutex=new Mutex(true,"Local\\DWG2-Launcher-"+BitConverter.ToString(SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes(Path.GetFullPath(Root).ToLowerInvariant()))).Replace("-",""),out created)) {
@@ -218,7 +220,13 @@ internal static class Launcher {
             }
             return 0;
         } catch(OperationCanceledException) { return 0; }
-        catch(Exception e) { File.WriteAllText(Path.Combine(Root,"launcher-error.txt"),e.ToString());if(!validate && !noLaunch) using(var owner=new Form{TopMost=true,ShowInTaskbar=false,Opacity=0,Width=1,Height=1}){owner.Show();owner.Activate();MessageBox.Show(owner,e.Message,"DWG2 Setup",MessageBoxButtons.OK,MessageBoxIcon.Error);}return 1; }
+        catch(Exception e) {
+            bool headless = !Environment.UserInteractive || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("CI")) || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("GITHUB_ACTIONS"));
+            Console.Error.WriteLine(e.Message);
+            try { File.WriteAllText(Path.Combine(Root,"launcher-error.txt"),e.ToString()); } catch {}
+            if(!headless && !validate && !noLaunch && !dry && !showVersion && !showHelp && !(e is ArgumentException)) using(var owner=new Form{TopMost=true,ShowInTaskbar=false,Opacity=0,Width=1,Height=1}){owner.Show();owner.Activate();MessageBox.Show(owner,e.Message,"DWG2 Setup",MessageBoxButtons.OK,MessageBoxIcon.Error);}
+            return 1;
+        }
     }
 }
 
